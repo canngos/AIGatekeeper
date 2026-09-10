@@ -362,21 +362,33 @@ function EventRow({
                     What was sent
                   </p>
                   <ul className="border" style={{ borderColor: "var(--rule)" }}>
-                    {event.prompt.map((seg, i) => (
-                      <li key={i} className="border-b px-2 py-1.5 last:border-b-0" style={{ borderColor: "var(--rule)" }}>
-                        <div className="flex items-baseline gap-2">
-                          <span className="wire" style={{ color: "var(--ink-faint)" }}>
-                            {seg.path}
-                          </span>
-                          {seg.role && (
-                            <span className="text-[11px]" style={{ color: "var(--ink-muted)" }}>
-                              {seg.role}
+                    {event.prompt.map((seg, i) =>
+                      seg.role === "note" ? (
+                        // Not part of the conversation: the proxy explaining
+                        // what it did not keep.
+                        <li
+                          key={i}
+                          className="border-b px-2 py-1.5 text-[12px] italic last:border-b-0"
+                          style={{ borderColor: "var(--rule)", color: "var(--ink-faint)" }}
+                        >
+                          {seg.text}
+                        </li>
+                      ) : (
+                        <li key={i} className="border-b px-2 py-1.5 last:border-b-0" style={{ borderColor: "var(--rule)" }}>
+                          <div className="flex items-baseline gap-2">
+                            <span className="wire" style={{ color: "var(--ink-faint)" }}>
+                              {seg.path}
                             </span>
-                          )}
-                        </div>
-                        <p className="mt-0.5 max-h-40 overflow-y-auto whitespace-pre-wrap text-[12.5px]">{seg.text}</p>
-                      </li>
-                    ))}
+                            {seg.role && (
+                              <span className="text-[11px]" style={{ color: "var(--ink-muted)" }}>
+                                {seg.role}
+                              </span>
+                            )}
+                          </div>
+                          <p className="mt-0.5 max-h-40 overflow-y-auto whitespace-pre-wrap text-[12.5px]">{seg.text}</p>
+                        </li>
+                      ),
+                    )}
                   </ul>
                 </div>
               )}

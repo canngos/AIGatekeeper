@@ -8,9 +8,11 @@ import (
 	"context"
 	"crypto/rand"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"time"
+	"unicode/utf8"
 
 	"github.com/canngos/aigatekeeper/internal/audit"
 	"github.com/canngos/aigatekeeper/internal/identity"
@@ -207,26 +209,61 @@ func (tx *Transaction) Event() audit.Event {
 	return e
 }
 
-// PromptSegments projects the extraction into audit-safe segments,
-// truncated so one enormous paste cannot fill the log.
+// PromptSegments projects the extraction into audit-safe segments, capped
+// so one enormous conversation cannot fill the log.
+//
+// The budget is spent from the newest segment backwards. A chat client
+// resends the whole thread on every turn, with a large system prompt and
+// tool context at the front, so spending it front-first would keep the
+// boilerplate and drop the message the person just typed. Whatever falls
+// off the front is noted rather than silently lost.
+//
+// This affects only what can be read back later: the DLP engine always
+// scans the whole extraction.
 func (tx *Transaction) PromptSegments(maxBytes int) []audit.PromptSegment {
 	if tx.Extraction == nil || len(tx.Extraction.Segments) == 0 {
 		return nil
 	}
-	out := make([]audit.PromptSegment, 0, len(tx.Extraction.Segments))
+	segs := tx.Extraction.Segments
+	kept := make([]audit.PromptSegment, 0, len(segs))
 	budget := maxBytes
-	for _, seg := range tx.Extraction.Segments {
+	omitted := 0
+
+	for i := len(segs) - 1; i >= 0; i-- {
 		if budget <= 0 {
+			omitted = i + 1
 			break
 		}
-		text := seg.Text
+		text := segs[i].Text
 		if len(text) > budget {
-			text = text[:budget] + "…"
+			text = truncateRunes(text, budget) + "…"
 		}
 		budget -= len(text)
-		out = append(out, audit.PromptSegment{Path: seg.Path, Role: seg.Role, Text: text})
+		kept = append(kept, audit.PromptSegment{Path: segs[i].Path, Role: segs[i].Role, Text: text})
 	}
-	return out
+	// Taken newest first; put them back into conversation order.
+	for l, r := 0, len(kept)-1; l < r; l, r = l+1, r-1 {
+		kept[l], kept[r] = kept[r], kept[l]
+	}
+	if omitted > 0 {
+		note := audit.PromptSegment{
+			Role: "note",
+			Text: fmt.Sprintf("%d earlier message(s) not recorded: this conversation is larger than audit.max_prompt_bytes (%d bytes). They were still scanned.", omitted, maxBytes),
+		}
+		kept = append([]audit.PromptSegment{note}, kept...)
+	}
+	return kept
+}
+
+// truncateRunes cuts to at most n bytes without splitting a character.
+func truncateRunes(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
 }
 
 func clientIP(addr string) string {

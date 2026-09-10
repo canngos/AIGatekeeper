@@ -19,7 +19,10 @@ audit:
   stdout: true
   log_allowed: true            # record clean prompts too, not only matches
   capture_prompts: true        # record what was typed, so you can read your own chat
-  max_prompt_bytes: 32KiB
+  # Copilot resends the whole conversation each turn, and an agent thread
+  # runs to 100 KB. The budget is spent newest-first, so the message you
+  # just typed always survives; raise this to keep more of the history.
+  max_prompt_bytes: 128KiB
   sqlite:
     enabled: true              # backs the console's history and charts
     path: /data/audit.db
