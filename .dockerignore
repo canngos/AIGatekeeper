@@ -1,0 +1,12 @@
+.git
+.github
+bin
+certs
+data
+web/node_modules
+web/dist
+web/coverage
+*.md
+!README.md
+.env*
+*.local.yaml
