@@ -9,18 +9,20 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/canngos/aigatekeeper/internal/admin"
 	"github.com/canngos/aigatekeeper/internal/audit"
 	"github.com/canngos/aigatekeeper/internal/ca"
 	"github.com/canngos/aigatekeeper/internal/config"
+	"github.com/canngos/aigatekeeper/internal/metrics"
 	"github.com/canngos/aigatekeeper/internal/parser"
 	"github.com/canngos/aigatekeeper/internal/policy"
 	"github.com/canngos/aigatekeeper/internal/proxy"
+	"github.com/canngos/aigatekeeper/internal/reload"
 )
 
 func cmdServe(args []string, stdout, stderr io.Writer) int {
@@ -50,22 +52,34 @@ func cmdServe(args []string, stdout, stderr io.Writer) int {
 }
 
 func serve(ctx context.Context, cfgPath string, stdout io.Writer, logger *slog.Logger) error {
-	raw, err := os.ReadFile(cfgPath)
-	if err != nil {
-		return fmt.Errorf("read config: %w", err)
-	}
-	cfg, err := config.Parse(raw)
-	if err != nil {
-		return err
-	}
-	cfg.SetBaseDir(filepath.Dir(cfgPath))
-	pol, err := policy.Compile(cfg, config.Hash(raw))
+	// The first parse tells us how to set up audit sinks and listeners,
+	// which are fixed for the process lifetime; everything policy-related
+	// is hot-reloadable through the manager.
+	bootCfg, err := config.Load(cfgPath)
 	if err != nil {
 		return err
 	}
-	store := policy.NewStore(pol)
 
-	rootCA, err := ca.Load(cfg.CA.Cert, cfg.CA.Key)
+	dispatcher, err := buildAudit(bootCfg, stdout)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := dispatcher.Close(5 * time.Second); err != nil {
+			logger.Warn("audit shutdown", "error", err)
+		}
+	}()
+	auditLog := metrics.Counting(dispatcher)
+
+	store := policy.NewStore(nil)
+	manager := reload.NewManager(cfgPath, store, auditLog, logger)
+	loaded, err := manager.Load(ctx)
+	if err != nil {
+		return err
+	}
+	cfg := loaded.Config
+
+	rootCA, err := ca.Load(cfg.ResolvePath(cfg.CA.Cert), cfg.ResolvePath(cfg.CA.Key))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("%w\nRun `aigatekeeper ca init` to create the root CA first", err)
@@ -78,8 +92,12 @@ func serve(ctx context.Context, cfgPath string, stdout io.Writer, logger *slog.L
 	}
 	certCache := ca.NewCache(signer, cfg.CA.CacheSize)
 
+	var extraRoots []string
+	for _, p := range cfg.TLS.UpstreamExtraRoots {
+		extraRoots = append(extraRoots, cfg.ResolvePath(p))
+	}
 	transport, err := proxy.NewTransport(proxy.TransportConfig{
-		ExtraRootPEMFiles:     cfg.TLS.UpstreamExtraRoots,
+		ExtraRootPEMFiles:     extraRoots,
 		Insecure:              cfg.TLS.UpstreamInsecure,
 		UpstreamProxy:         cfg.TLS.UpstreamProxy,
 		ResponseHeaderTimeout: cfg.Limits.UpstreamTimeout.Std(),
@@ -90,12 +108,6 @@ func serve(ctx context.Context, cfgPath string, stdout io.Writer, logger *slog.L
 	if cfg.TLS.UpstreamInsecure {
 		logger.Warn("tls.upstream_insecure is enabled: upstream certificates are NOT verified")
 	}
-
-	auditLog, closeAudit, err := buildAudit(cfg, stdout)
-	if err != nil {
-		return err
-	}
-	defer closeAudit()
 
 	forwarder := proxy.NewForwarder(transport, logger)
 	inspect := proxy.Chain(forwarder,
@@ -129,20 +141,29 @@ func serve(ctx context.Context, cfgPath string, stdout io.Writer, logger *slog.L
 		reverses = append(reverses, rl)
 	}
 
+	reloadFn := func(ctx context.Context) (bool, string, error) {
+		l, changed, err := manager.ReloadFromDisk(ctx, "admin")
+		version := ""
+		if l != nil {
+			version = l.Hash
+		}
+		return changed, version, err
+	}
 	adminSrv := admin.New(admin.Options{
-		CACertPEM: rootCA.CertPEM(),
-		Version:   version,
-		Ready:     func() bool { return store.Load() != nil },
-		Logger:    logger,
+		CACertPEM:  rootCA.CertPEM(),
+		Version:    version,
+		Ready:      func() bool { return store.Load() != nil },
+		Reload:     reloadFn,
+		PolicyInfo: func() any { return policySummary(manager, dispatcher) },
+		Logger:     logger,
 	})
 
-	logger.Info("policy loaded", "services", len(pol.Services), "hash", shortHash(pol.Hash), "monitor", pol.Monitor)
 	logger.Info("root CA", "subject", rootCA.Cert.Subject.CommonName, "sha256", rootCA.Fingerprint())
 
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var wg sync.WaitGroup
-	errc := make(chan error, 2+len(reverses))
+	errc := make(chan error, 3+len(reverses))
 	launch := func(name string, fn func(context.Context) error) {
 		wg.Add(1)
 		go func() {
@@ -161,6 +182,17 @@ func serve(ctx context.Context, cfgPath string, stdout io.Writer, logger *slog.L
 		addr := cfg.Listen.Reverse[i].Listen
 		launch("reverse/"+rl.Name, func(c context.Context) error { return rl.ListenAndServe(c, addr) })
 	}
+	if cfg.Reload.Watch || cfg.Reload.PollInterval.Std() > 0 {
+		launch("config-watch", func(c context.Context) error {
+			return reload.Watch(c, manager, reload.WatchOptions{
+				Debounce:        cfg.Reload.Debounce.Std(),
+				PollInterval:    cfg.Reload.PollInterval.Std(),
+				DisableFsnotify: !cfg.Reload.Watch,
+				Logger:          logger,
+			})
+		})
+	}
+	onHangup(runCtx, func() { _, _, _ = manager.ReloadFromDisk(runCtx, "signal") })
 
 	<-runCtx.Done()
 	wg.Wait()
@@ -176,28 +208,56 @@ func serve(ctx context.Context, cfgPath string, stdout io.Writer, logger *slog.L
 	return nil
 }
 
-func buildAudit(cfg *config.Config, stdout io.Writer) (audit.Logger, func(), error) {
-	var loggers audit.Multi
-	var closers []func()
+func buildAudit(cfg *config.Config, stdout io.Writer) (*audit.Dispatcher, error) {
+	d := audit.NewDispatcher()
 	if cfg.Audit.Stdout {
-		loggers = append(loggers, audit.NewJSONLogger(stdout))
+		d.Add("stdout", audit.NewJSONLogger(stdout), audit.SinkOptions{Queue: 1024, Overflow: audit.OverflowBlock})
 	}
 	if cfg.Audit.File != "" {
-		f, err := os.OpenFile(cfg.Audit.File, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o640)
+		f, err := os.OpenFile(cfg.ResolvePath(cfg.Audit.File), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o640)
 		if err != nil {
-			return nil, nil, fmt.Errorf("open audit file: %w", err)
+			return nil, fmt.Errorf("open audit file: %w", err)
 		}
-		loggers = append(loggers, audit.NewJSONLogger(f))
-		closers = append(closers, func() { _ = f.Close() })
+		d.Add("file", audit.NewWriterSink(f), audit.SinkOptions{Queue: 4096, Overflow: audit.OverflowDrop})
 	}
-	if len(loggers) == 0 {
-		return audit.Discard, func() {}, nil
+	return d, nil
+}
+
+// policySummary is the secret-free view served at /-/policy.
+func policySummary(m *reload.Manager, d *audit.Dispatcher) any {
+	l := m.Current()
+	if l == nil {
+		return map[string]any{"loaded": false}
 	}
-	return loggers, func() {
-		for _, c := range closers {
-			c()
+	reloads, failures, lastErr := m.Stats()
+	services := make([]map[string]any, 0, len(l.Policy.Services))
+	for _, s := range l.Policy.Services {
+		hosts := make([]string, len(s.Hosts))
+		for i, h := range s.Hosts {
+			hosts[i] = h.String()
 		}
-	}, nil
+		services = append(services, map[string]any{
+			"name": s.Name, "hosts": hosts, "extractor": s.Extractor, "block_mode": s.BlockMode, "rules": s.RuleIDs(),
+		})
+	}
+	rules := make([]map[string]any, 0, len(l.Policy.Rules))
+	for _, r := range l.Policy.Rules {
+		rules = append(rules, map[string]any{"id": r.ID, "severity": r.Severity, "action": r.Action})
+	}
+	return map[string]any{
+		"loaded":      true,
+		"version":     l.Hash,
+		"loaded_at":   l.LoadedAt,
+		"source":      l.Source,
+		"path":        m.Path(),
+		"monitor":     l.Policy.Monitor,
+		"services":    services,
+		"rules":       rules,
+		"reloads":     reloads,
+		"failures":    failures,
+		"last_error":  lastErr,
+		"audit_sinks": d.Stats(),
+	}
 }
 
 func parseLevel(s string) (slog.Level, error) {
@@ -213,11 +273,4 @@ func parseLevel(s string) (slog.Level, error) {
 	default:
 		return 0, fmt.Errorf("invalid --log-level %q", s)
 	}
-}
-
-func shortHash(h string) string {
-	if len(h) > 12 {
-		return h[:12]
-	}
-	return h
 }

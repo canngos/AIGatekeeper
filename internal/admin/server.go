@@ -1,11 +1,13 @@
-// Package admin serves health endpoints, the CA certificate, and (in later
-// phases) the JSON API and embedded web UI.
+// Package admin serves health endpoints, the CA certificate, operational
+// endpoints (reload, policy summary, metrics) and, in later phases, the JSON
+// API and embedded web UI.
 package admin
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
+	"expvar"
 	"fmt"
 	"log/slog"
 	"net"
@@ -13,12 +15,20 @@ import (
 	"time"
 )
 
+// ReloadFunc re-reads the configuration; it reports whether the policy
+// changed and the resulting version hash.
+type ReloadFunc func(ctx context.Context) (changed bool, version string, err error)
+
 // Options configures the admin server.
 type Options struct {
 	CACertPEM []byte
 	Version   string
 	Ready     func() bool
-	Logger    *slog.Logger
+	Reload    ReloadFunc
+	// PolicyInfo returns a JSON-serialisable, secret-free summary of the
+	// live policy.
+	PolicyInfo func() any
+	Logger     *slog.Logger
 }
 
 // Server is the admin HTTP server.
@@ -40,6 +50,9 @@ func New(opts Options) *Server {
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
 	s.mux.HandleFunc("GET /readyz", s.handleReady)
 	s.mux.HandleFunc("GET /ca.crt", s.handleCACert)
+	s.mux.HandleFunc("POST /-/reload", s.handleReload)
+	s.mux.HandleFunc("GET /-/policy", s.handlePolicy)
+	s.mux.Handle("GET /metrics", expvar.Handler())
 	s.srv = &http.Server{
 		Handler:           s.mux,
 		ReadHeaderTimeout: 10 * time.Second,
@@ -97,6 +110,27 @@ func (s *Server) handleCACert(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/x-pem-file")
 	w.Header().Set("Content-Disposition", `attachment; filename="aigatekeeper-ca.crt"`)
 	_, _ = w.Write(s.opts.CACertPEM)
+}
+
+func (s *Server) handleReload(w http.ResponseWriter, r *http.Request) {
+	if s.opts.Reload == nil {
+		writeJSON(w, http.StatusNotImplemented, map[string]any{"error": "reload not available"})
+		return
+	}
+	changed, version, err := s.opts.Reload(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"reloaded": false, "version": version, "error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"reloaded": true, "changed": changed, "version": version})
+}
+
+func (s *Server) handlePolicy(w http.ResponseWriter, _ *http.Request) {
+	if s.opts.PolicyInfo == nil {
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": "policy summary not available"})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.opts.PolicyInfo())
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

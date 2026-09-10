@@ -1,0 +1,7 @@
+{
+  "// AIGatekeeper": "Merge into your VS Code settings.json (user or machine scope). Copilot follows these settings.",
+  "http.proxy": "http://proxy.corp.local:8080",
+  "http.proxySupport": "override",
+  "http.proxyStrictSSL": true,
+  "http.systemCertificates": true
+}

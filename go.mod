@@ -4,8 +4,12 @@ go 1.27
 
 require (
 	github.com/andybalholm/brotli v1.2.3
+	github.com/fsnotify/fsnotify v1.10.1
 	golang.org/x/net v0.59.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
-require golang.org/x/text v0.42.0 // indirect
+require (
+	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
+)
