@@ -178,8 +178,8 @@ export interface RuleConfig {
   options?: Record<string, Record<string, unknown>>;
 }
 
-/** A pattern the deployment wrote itself, filed alongside the built-in
-    detectors it belongs with. */
+/** A pattern the deployment wrote itself, for a format the built-in
+    detectors do not know. */
 export interface CustomPattern {
   /** Recorded on every finding, so keep it short and stable. */
   id: string;
@@ -188,8 +188,6 @@ export interface CustomPattern {
   min_length?: number;
   /** Overrides the rule's severity for this pattern alone. */
   severity?: "low" | "medium" | "high" | "critical";
-  /** Which group of the detector list it appears in. */
-  group?: string;
 }
 
 export interface AllowlistConfig {

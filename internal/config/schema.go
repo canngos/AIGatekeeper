@@ -205,9 +205,6 @@ type RegexConfig struct {
 	// Severity overrides the rule's for this pattern alone, so one rule can
 	// carry a critical key format and a low-severity internal hostname.
 	Severity string `yaml:"severity,omitempty"`
-	// Group files the pattern alongside the built-in detectors it belongs
-	// with in the console. It has no effect on matching.
-	Group string `yaml:"group,omitempty"`
 }
 
 // AllowlistConfig lists exceptions that suppress findings or bypass scanning.

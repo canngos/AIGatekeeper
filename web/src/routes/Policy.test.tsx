@@ -187,22 +187,22 @@ describe("Policy", () => {
     ]);
   });
 
-  it("defines a pattern of its own inside the group it belongs to", async () => {
+  it("defines a pattern of its own", async () => {
     const user = await openRule();
 
-    // Every group offers it, including one with nothing of its own yet.
-    expect(screen.getAllByRole("button", { name: "Add your own" }).length).toBeGreaterThan(1);
-    const keysGroup = screen.getByText("Keys and tokens").parentElement!;
-    await user.click(within(keysGroup).getByRole("button", { name: "Add your own" }));
+    // One place to add one, under its own heading.
+    expect(screen.getByText("Your own")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Add your own" })).toHaveLength(1);
 
-    await user.type(screen.getByLabelText("Keys and tokens pattern 1 name"), "corp_gateway_key");
-    // Typed rather than clicked: user-event reads [ and { as key descriptors,
+    await user.click(screen.getByRole("button", { name: "Add your own" }));
+    await user.type(screen.getByLabelText("Pattern 1 name"), "corp_gateway_key");
+    // Set rather than typed: user-event reads [ and { as key descriptors,
     // and a regular expression is mostly those.
-    fireEvent.change(screen.getByLabelText("Keys and tokens pattern 1 expression"), {
+    fireEvent.change(screen.getByLabelText("Pattern 1 expression"), {
       target: { value: "CORPKEY-[A-Z0-9]{24}" },
     });
-    await user.selectOptions(screen.getByLabelText("Keys and tokens pattern 1 severity"), "critical");
-    await user.type(screen.getByLabelText("Keys and tokens pattern 1 shortest match"), "8");
+    await user.selectOptions(screen.getByLabelText("Pattern 1 severity"), "critical");
+    await user.type(screen.getByLabelText("Pattern 1 shortest match"), "8");
 
     const applied = vi.spyOn(api, "applyConfig").mockResolvedValue({ applied: true, version: "v2", loaded_at: new Date().toISOString() });
     await user.click(screen.getByRole("button", { name: "Apply changes" }));
@@ -210,17 +210,11 @@ describe("Policy", () => {
 
     const sent = applied.mock.calls[0][0] as { config: { rules: { regex?: unknown[] }[] } };
     expect(sent.config.rules[0].regex).toEqual([
-      {
-        id: "corp_gateway_key",
-        pattern: "CORPKEY-[A-Z0-9]{24}",
-        severity: "critical",
-        min_length: 8,
-        group: "Keys and tokens",
-      },
+      { id: "corp_gateway_key", pattern: "CORPKEY-[A-Z0-9]{24}", severity: "critical", min_length: 8 },
     ]);
   });
 
-  it("shows an existing pattern in its group and can remove it", async () => {
+  it("shows existing patterns and can remove one", async () => {
     vi.spyOn(api, "config").mockResolvedValue({
       ...config,
       config: {
@@ -228,37 +222,26 @@ describe("Policy", () => {
         rules: [
           {
             ...config.config.rules[0],
-            regex: [{ id: "staff_number", pattern: "STAFF-[0-9]{6}", group: "Personal data" }],
+            regex: [
+              { id: "staff_number", pattern: "STAFF-[0-9]{6}" },
+              { id: "corp_gateway_key", pattern: "CORPKEY-[A-Z0-9]{24}", severity: "high" },
+            ],
           },
         ],
       },
     });
     const user = await openRule();
 
-    expect(screen.getByLabelText("Personal data pattern 1 name")).toHaveValue("staff_number");
+    expect(screen.getByLabelText("Pattern 1 name")).toHaveValue("staff_number");
     // No severity of its own means it follows the rule.
-    expect(screen.getByLabelText("Personal data pattern 1 severity")).toHaveValue("");
-    expect(screen.getByText("Same as the rule (critical)")).toBeInTheDocument();
-    expect(screen.queryByLabelText("Keys and tokens pattern 1 name")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Pattern 1 severity")).toHaveValue("");
+    expect(screen.getAllByText("Same as the rule (critical)").length).toBe(2); // one per row
+    expect(screen.getByLabelText("Pattern 2 severity")).toHaveValue("high");
 
-    const personal = screen.getByText("Personal data").parentElement!;
-    await user.click(within(personal).getByRole("button", { name: "Remove" }));
+    await user.click(screen.getAllByRole("button", { name: "Remove" })[0]);
 
-    expect(screen.queryByLabelText("Personal data pattern 1 name")).not.toBeInTheDocument();
-  });
-
-  it("files a pattern with no group of its own under Your own", async () => {
-    vi.spyOn(api, "config").mockResolvedValue({
-      ...config,
-      config: {
-        ...config.config,
-        rules: [{ ...config.config.rules[0], regex: [{ id: "project_codename", pattern: "falcon|orion" }] }],
-      },
-    });
-    await openRule();
-
-    expect(screen.getByText("Your own")).toBeInTheDocument();
-    expect(screen.getByLabelText("Your own pattern 1 name")).toHaveValue("project_codename");
+    expect(screen.getByLabelText("Pattern 1 name")).toHaveValue("corp_gateway_key");
+    expect(screen.queryByLabelText("Pattern 2 name")).not.toBeInTheDocument();
   });
 
   it("resetting prefixes drops the option so the defaults apply again", async () => {

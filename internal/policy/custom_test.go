@@ -28,10 +28,8 @@ rules:
       - id: corp_gateway_key
         pattern: '\bCORPKEY-[A-Z0-9]{24}\b'
         severity: critical
-        group: Keys and tokens
       - id: staff_number
         pattern: '\bSTAFF-[0-9]{6}\b'
-        group: Personal data
       - id: too_short_to_matter
         pattern: '\bREF-[0-9]+\b'
         min_length: 12

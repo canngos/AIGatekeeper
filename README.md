@@ -115,10 +115,8 @@ Python and .NET's `HttpClient` do not hard-fail on unknown revocation status by 
   (`block`, `monitor`, `allow`).
 - A `regex` entry is how a deployment adds a format the built-ins do not know: an internal gateway's
   token, a national identity number. Its `id` is what every finding and alert calls it, so keep it
-  short and stable. `severity` overrides the rule's for that pattern alone, `min_length` discards
-  short matches, and `group` files it beside the built-in detectors it belongs with in the console
-  (`Keys and tokens`, `Personal data`, or anything else you name). Patterns are RE2: no lookahead and
-  no backreferences.
+  short and stable. `severity` overrides the rule's for that pattern alone and `min_length` discards
+  short matches. Patterns are RE2: no lookahead and no backreferences.
 - `access_keys` recognises an access key ID by its vendor prefix rather than by vendor. It ships with
   AWS, Alibaba and Tencent, and takes a `prefixes` list you can edit in the console or the file. Give
   a prefix an exact `length` when the vendor publishes one; leave it blank and the key may be any
