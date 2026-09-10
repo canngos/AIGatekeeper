@@ -117,11 +117,36 @@ export interface Status {
   alerts?: { rules: number; raised: number; suppressed: number };
 }
 
+/** One tunable of a detector, described by the server so the console can
+    render a control for it without knowing the detector. */
+export interface DetectorOption {
+  name: string;
+  label?: string;
+  type: "bool" | "number" | "string" | "prefix_list";
+  default: unknown;
+  description: string;
+}
+
 export interface DetectorInfo {
   id: string;
+  /** Short human label, e.g. "Cloud access key IDs". */
+  name: string;
+  /** Presentation group, e.g. "Keys and tokens". */
+  group: string;
   description: string;
   severity: string;
-  options?: { name: string; type: string; default: unknown; description: string }[];
+  options?: DetectorOption[];
+  /** Kept working for existing policies, but no longer offered. */
+  deprecated?: boolean;
+  replaced_by?: string;
+}
+
+/** A vendor prefix for the access_keys detector. A blank length means the
+    detector's own min/max range applies. */
+export interface AccessKeyPrefix {
+  prefix: string;
+  length?: number;
+  note?: string;
 }
 
 export interface Problem {

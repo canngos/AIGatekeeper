@@ -49,6 +49,10 @@ type Config struct {
 	Alerts   AlertsConfig   `yaml:"alerts,omitempty"`
 
 	baseDir string
+
+	// fromEnv puts back what the file said for every field an environment
+	// variable replaced. See AsWritten.
+	fromEnv []func(*Config)
 }
 
 // ListenConfig holds listener addresses.
@@ -165,13 +169,13 @@ type ServiceConfig struct {
 
 // RuleConfig groups detectors with a severity and an action.
 type RuleConfig struct {
-	ID        string                    `yaml:"id"`
-	Severity  string                    `yaml:"severity"`
-	Action    string                    `yaml:"action,omitempty"`
-	Detectors []string                  `yaml:"detectors,omitempty"`
-	Options   map[string]map[string]any `yaml:"options,omitempty"`
-	Keywords  KeywordsConfig            `yaml:"keywords,omitempty"`
-	Regex     []RegexConfig             `yaml:"regex,omitempty"`
+	ID        string                     `yaml:"id"`
+	Severity  string                     `yaml:"severity"`
+	Action    string                     `yaml:"action,omitempty"`
+	Detectors []string                   `yaml:"detectors,omitempty"`
+	Options   map[string]DetectorOptions `yaml:"options,omitempty"`
+	Keywords  KeywordsConfig             `yaml:"keywords,omitempty"`
+	Regex     []RegexConfig              `yaml:"regex,omitempty"`
 }
 
 // KeywordsConfig configures a keyword list detector for a rule.

@@ -15,13 +15,13 @@ var (
 )
 
 func init() {
-	register(Info{ID: IDCreditCard, Severity: SeverityHigh, Description: "Payment card numbers (13-19 digits, Luhn-valid, known issuer prefix)"},
+	register(Info{ID: IDCreditCard, Name: "Payment card numbers", Group: GroupPersonal, Severity: SeverityHigh, Description: "Payment card numbers (13-19 digits, Luhn-valid, known issuer prefix)"},
 		func(map[string]any) (Detector, error) {
 			return &simpleDetector{id: IDCreditCard, severity: SeverityHigh, detect: detectCreditCards}, nil
 		})
 
 	register(Info{
-		ID: IDEmail, Severity: SeverityMedium,
+		ID: IDEmail, Name: "Email addresses", Group: GroupPersonal, Severity: SeverityMedium,
 		Description: "Email addresses (noisy in source code; enable per deployment and allow-list corporate domains)",
 	}, func(map[string]any) (Detector, error) {
 		return &regexDetector{
@@ -43,10 +43,10 @@ func init() {
 	})
 
 	register(Info{
-		ID: IDUSSSN, Severity: SeverityHigh,
+		ID: IDUSSSN, Name: "US Social Security numbers", Group: GroupPersonal, Severity: SeverityHigh,
 		Description: "US Social Security numbers",
 		Options: []OptionInfo{
-			{Name: "require_context", Type: "bool", Default: false, Description: "Require an SSN/social security label nearby even when separators are present"},
+			{Name: "require_context", Label: "Only with a nearby label", Type: "bool", Default: false, Description: "Require the words SSN or social security near the number, even when it is written with dashes."},
 		},
 	}, func(opts map[string]any) (Detector, error) {
 		requireContext, _ := optBool(opts, "require_context", false)
@@ -55,7 +55,7 @@ func init() {
 		}}, nil
 	})
 
-	register(Info{ID: IDIBAN, Severity: SeverityHigh, Description: "International bank account numbers (country length and mod-97 validated)"},
+	register(Info{ID: IDIBAN, Name: "Bank account numbers (IBAN)", Group: GroupPersonal, Severity: SeverityHigh, Description: "International bank account numbers (country length and mod-97 validated)"},
 		func(map[string]any) (Detector, error) {
 			return &regexDetector{
 				id: IDIBAN, severity: SeverityHigh,

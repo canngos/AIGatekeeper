@@ -39,6 +39,34 @@ func TestDetectorsPositivesAndNegatives(t *testing.T) {
 			negatives: []string{"AKIAIOSFODNN7EXAMPLE", "AKIA123", "akiaiosfodnn7realkey"},
 		},
 		{
+			id: IDAccessKeys,
+			positives: []string{
+				"key AKIAIOSFODNN7REALKEY here",
+				"ASIA1234567890ABCDEF",
+				"LTAI5tGk8mQ2rWx9Yz3Bv7Nc",             // Alibaba, matched by the length range
+				"AKID7Hc2pQfqm3rY2vXb9LkT5wNzA8sD1eF4", // Tencent, exactly 32 after the prefix
+			},
+			negatives: []string{
+				"AKIAIOSFODNN7EXAMPLE",
+				"AKIA123",
+				"akiaiosfodnn7realkey",
+				"ASIAPACIFICREGIONDATA",  // an exact length is what rules this out
+				"LTAIRPORTTERMINALCODES", // a range prefix, ruled out by having no digits
+			},
+		},
+		{
+			id: IDAccessKeys,
+			opts: map[string]any{"prefixes": []any{
+				"CORP",
+				map[string]any{"prefix": "SVC", "length": 12, "note": "internal service"},
+			}},
+			positives: []string{"CORP7Hc2pQfqm3rY2vXb9", "SVC7Hc2pQfqm3rY"},
+			negatives: []string{
+				"AKIAIOSFODNN7REALKEY", // replacing the list replaces the defaults
+				"SVC7Hc2pQ",            // too short for the exact length
+			},
+		},
+		{
 			id:        IDAWSSecretKey,
 			positives: []string{"aws_secret_access_key = 7HcpQfqm3rY2vXb9LkT5wNzA8sD1eF4gH6jK0lM2", `AWS Secret Key: "7HcpQfqm3rY2vXb9LkT5wNzA8sD1eF4gH6jK0lM2"`},
 			negatives: []string{"aws_secret_access_key = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "secret_key = 7HcpQfqm3rY2vXb9LkT5wNzA8sD1eF4gH6jK0lM2"},
@@ -144,8 +172,16 @@ func TestDetectorsPositivesAndNegatives(t *testing.T) {
 
 func TestBuiltinRegistry(t *testing.T) {
 	infos := Builtin()
-	if len(infos) != 14 {
-		t.Fatalf("expected 14 builtin detectors, got %d", len(infos))
+	if len(infos) != 15 {
+		t.Fatalf("expected 15 builtin detectors, got %d", len(infos))
+	}
+	for _, info := range infos {
+		if info.Name == "" || info.Group == "" {
+			t.Errorf("%s needs a name and a group: the console offers detectors by name", info.ID)
+		}
+		if info.Deprecated && info.ReplacedBy == "" {
+			t.Errorf("%s is deprecated but names no replacement", info.ID)
+		}
 	}
 	for i := 1; i < len(infos); i++ {
 		if infos[i-1].ID >= infos[i].ID {
@@ -210,6 +246,9 @@ func allBuiltins(t testing.TB) []Detector {
 	t.Helper()
 	var out []Detector
 	for _, info := range Builtin() {
+		if info.Deprecated {
+			continue
+		}
 		out = append(out, mustDetector(t, info.ID, nil))
 	}
 	return out
@@ -241,7 +280,7 @@ func TestScannerFindingsAreMaskedAndDeduplicated(t *testing.T) {
 			t.Fatalf("incomplete finding: %+v", f)
 		}
 	}
-	if findings[0].Detector != IDAWSAccessKey || findings[0].Segment != "/messages/0/content" || findings[0].Offset != 6 {
+	if findings[0].Detector != IDAccessKeys || findings[0].Segment != "/messages/0/content" || findings[0].Offset != 6 {
 		t.Fatalf("unexpected first finding: %+v", findings[0])
 	}
 }

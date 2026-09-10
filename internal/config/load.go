@@ -88,13 +88,24 @@ func applyDefaultsToSlices(cfg *Config) {
 
 // ApplyEnv overrides selected fields from environment variables. lookup is
 // injectable for tests.
+//
+// Every override records what the file said, because the admin console
+// rewrites the whole file from this struct: without that, applying a policy
+// change would bake the deployment's environment into the operator's
+// configuration, secrets included. See Config.AsWritten.
 func ApplyEnv(cfg *Config, lookup func(string) (string, bool)) error {
-	str := func(key string, dst *string) {
-		if v, ok := lookup(EnvPrefix + key); ok && v != "" {
-			*dst = v
+	// Fields are named by an accessor rather than a bare pointer so the same
+	// closure can restore the value into a copy of the configuration.
+	str := func(key string, field func(*Config) *string) {
+		v, ok := lookup(EnvPrefix + key)
+		if !ok || v == "" {
+			return
 		}
+		p := field(cfg)
+		cfg.rememberFileValue(*p, func(c *Config, prior string) { *field(c) = prior })
+		*p = v
 	}
-	boolean := func(key string, dst *bool) error {
+	boolean := func(key string, field func(*Config) *bool) error {
 		v, ok := lookup(EnvPrefix + key)
 		if !ok || v == "" {
 			return nil
@@ -103,10 +114,13 @@ func ApplyEnv(cfg *Config, lookup func(string) (string, bool)) error {
 		if err != nil {
 			return fmt.Errorf("%s%s: invalid boolean %q", EnvPrefix, key, v)
 		}
-		*dst = b
+		p := field(cfg)
+		prior := *p
+		cfg.fromEnv = append(cfg.fromEnv, func(c *Config) { *field(c) = prior })
+		*p = b
 		return nil
 	}
-	dur := func(key string, dst *Duration) error {
+	dur := func(key string, field func(*Config) *Duration) error {
 		v, ok := lookup(EnvPrefix + key)
 		if !ok || v == "" {
 			return nil
@@ -115,47 +129,58 @@ func ApplyEnv(cfg *Config, lookup func(string) (string, bool)) error {
 		if err != nil {
 			return fmt.Errorf("%s%s: %v", EnvPrefix, key, err)
 		}
-		*dst = Duration(d)
+		p := field(cfg)
+		prior := *p
+		cfg.fromEnv = append(cfg.fromEnv, func(c *Config) { *field(c) = prior })
+		*p = Duration(d)
 		return nil
 	}
 
-	str("LISTEN_FORWARD", &cfg.Listen.Forward)
-	str("LISTEN_ADMIN", &cfg.Listen.Admin)
-	str("CA_CERT", &cfg.CA.Cert)
-	str("CA_KEY", &cfg.CA.Key)
-	str("AUDIT_FILE", &cfg.Audit.File)
-	str("AUDIT_SQLITE_PATH", &cfg.Audit.SQLite.Path)
-	str("ADMIN_PASSWORD_HASH", &cfg.Admin.Auth.PasswordHash)
-	str("ADMIN_TOKEN", &cfg.Admin.Auth.Token)
-	str("UPSTREAM_PROXY", &cfg.TLS.UpstreamProxy)
-	str("SMTP_PASSWORD", &cfg.Alerts.Email.Password)
-	str("LDAP_BIND_PASSWORD", &cfg.Identity.ProxyAuth.LDAP.BindPassword)
+	str("LISTEN_FORWARD", func(c *Config) *string { return &c.Listen.Forward })
+	str("LISTEN_ADMIN", func(c *Config) *string { return &c.Listen.Admin })
+	str("CA_CERT", func(c *Config) *string { return &c.CA.Cert })
+	str("CA_KEY", func(c *Config) *string { return &c.CA.Key })
+	str("AUDIT_FILE", func(c *Config) *string { return &c.Audit.File })
+	str("AUDIT_SQLITE_PATH", func(c *Config) *string { return &c.Audit.SQLite.Path })
+	str("ADMIN_PASSWORD_HASH", func(c *Config) *string { return &c.Admin.Auth.PasswordHash })
+	str("ADMIN_TOKEN", func(c *Config) *string { return &c.Admin.Auth.Token })
+	str("UPSTREAM_PROXY", func(c *Config) *string { return &c.TLS.UpstreamProxy })
+	str("SMTP_PASSWORD", func(c *Config) *string { return &c.Alerts.Email.Password })
+	str("LDAP_BIND_PASSWORD", func(c *Config) *string { return &c.Identity.ProxyAuth.LDAP.BindPassword })
 
-	// Secrets may also name an environment variable to read, which keeps
-	// them out of the file the admin console rewrites.
-	if v := cfg.Identity.ProxyAuth.LDAP.BindPasswordEnv; v != "" {
-		if secret, ok := lookup(v); ok {
-			cfg.Identity.ProxyAuth.LDAP.BindPassword = secret
+	// A secret may instead name the variable to read it from, which is the
+	// better habit. Either way the value is remembered as the file had it.
+	fromNamedVar := func(name string, field func(*Config) *string) {
+		if name == "" {
+			return
 		}
-	}
-	if v := cfg.Alerts.Email.PasswordEnv; v != "" {
-		if secret, ok := lookup(v); ok {
-			cfg.Alerts.Email.Password = secret
+		secret, ok := lookup(name)
+		if !ok {
+			return
 		}
+		p := field(cfg)
+		cfg.rememberFileValue(*p, func(c *Config, prior string) { *field(c) = prior })
+		*p = secret
 	}
+	fromNamedVar(cfg.Identity.ProxyAuth.LDAP.BindPasswordEnv,
+		func(c *Config) *string { return &c.Identity.ProxyAuth.LDAP.BindPassword })
+	fromNamedVar(cfg.Alerts.Email.PasswordEnv,
+		func(c *Config) *string { return &c.Alerts.Email.Password })
 	for i := range cfg.Alerts.Webhooks {
-		if v := cfg.Alerts.Webhooks[i].SecretEnv; v != "" {
-			if secret, ok := lookup(v); ok {
-				cfg.Alerts.Webhooks[i].Secret = secret
-			}
-		}
+		fromNamedVar(cfg.Alerts.Webhooks[i].SecretEnv,
+			func(c *Config) *string { return &c.Alerts.Webhooks[i].Secret })
 	}
+
 	for _, f := range []func() error{
-		func() error { return boolean("MODE_MONITOR", &cfg.Mode.Monitor) },
-		func() error { return boolean("TUNNEL_UNMATCHED", &cfg.TunnelUnmatched) },
-		func() error { return boolean("TLS_UPSTREAM_INSECURE", &cfg.TLS.UpstreamInsecure) },
-		func() error { return boolean("AUDIT_STDOUT", &cfg.Audit.Stdout) },
-		func() error { return dur("RELOAD_POLL_INTERVAL", &cfg.Reload.PollInterval) },
+		func() error { return boolean("MODE_MONITOR", func(c *Config) *bool { return &c.Mode.Monitor }) },
+		func() error { return boolean("TUNNEL_UNMATCHED", func(c *Config) *bool { return &c.TunnelUnmatched }) },
+		func() error {
+			return boolean("TLS_UPSTREAM_INSECURE", func(c *Config) *bool { return &c.TLS.UpstreamInsecure })
+		},
+		func() error { return boolean("AUDIT_STDOUT", func(c *Config) *bool { return &c.Audit.Stdout }) },
+		func() error {
+			return dur("RELOAD_POLL_INTERVAL", func(c *Config) *Duration { return &c.Reload.PollInterval })
+		},
 	} {
 		if err := f(); err != nil {
 			return err
@@ -173,6 +198,7 @@ func Hash(raw []byte) string {
 
 // Marshal renders a Config back to YAML.
 func Marshal(cfg *Config) ([]byte, error) {
+	cfg = cfg.AsWritten()
 	var buf bytes.Buffer
 	enc := yaml.NewEncoder(&buf)
 	enc.SetIndent(2)

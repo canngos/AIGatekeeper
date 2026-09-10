@@ -68,7 +68,7 @@ rules:
   - id: secrets
     severity: critical
     action: block              # held by monitor mode until you turn it off
-    detectors: [aws_access_key, aws_secret_key, github_token, slack_token,
+    detectors: [access_keys, aws_secret_key, github_token, slack_token,
                 google_api_key, openai_key, anthropic_key, jwt, private_key,
                 high_entropy_secret]
 

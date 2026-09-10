@@ -171,24 +171,47 @@ func (s *RegexScanner) suppressed(d Detector, m Match) bool {
 }
 
 // Info describes a built-in detector for documentation and the admin UI.
+//
+// ID is what configuration and audit records use. Name and Group exist so
+// the console can offer detectors in the words a security lead would use,
+// rather than making them read identifiers.
 type Info struct {
 	ID          string       `json:"id"`
+	Name        string       `json:"name"`
+	Group       string       `json:"group"`
 	Description string       `json:"description"`
 	Severity    string       `json:"severity"`
 	Options     []OptionInfo `json:"options,omitempty"`
+	// Deprecated marks a detector kept only so existing configuration and
+	// audit history keep working. The console offers it only to a rule that
+	// already uses it, alongside its replacement.
+	Deprecated bool   `json:"deprecated,omitempty"`
+	ReplacedBy string `json:"replaced_by,omitempty"`
 }
+
+// Detector groups, in the order the console shows them.
+const (
+	GroupKeys     = "Keys and tokens"
+	GroupPersonal = "Personal data"
+)
+
+// GroupOrder lists the groups in presentation order.
+var GroupOrder = []string{GroupKeys, GroupPersonal}
 
 // OptionInfo documents one tunable of a detector.
 type OptionInfo struct {
 	Name        string `json:"name"`
-	Type        string `json:"type"` // bool | number | string
+	Label       string `json:"label"`
+	Type        string `json:"type"` // bool | number | string | prefix_list
 	Default     any    `json:"default"`
 	Description string `json:"description"`
 }
 
 // Builtin detector identifiers.
 const (
-	IDAWSAccessKey      = "aws_access_key"
+	IDAccessKeys   = "access_keys"
+	IDAWSAccessKey = "aws_access_key" // deprecated: use IDAccessKeys
+
 	IDAWSSecretKey      = "aws_secret_key"
 	IDGitHubToken       = "github_token"
 	IDSlackToken        = "slack_token"

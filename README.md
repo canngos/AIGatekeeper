@@ -107,9 +107,16 @@ Python and .NET's `HttpClient` do not hard-fail on unknown revocation status by 
 
 - `services`: host regexes, which extractor parses the body, `block_mode` (`reject` or `synthetic`),
   `passthrough_paths` that are never inspected, and the `rules` to apply.
-- `rules`: built-in `detectors` (AWS, GitHub, Slack, Google, OpenAI and Anthropic keys, JWT, private
-  keys, high-entropy secrets, credit cards, email, US SSN, IBAN), plus `keywords` files and custom
-  `regex` patterns, each with a `severity` and an `action` (`block`, `monitor`, `allow`).
+- `rules`: built-in `detectors` (cloud access key IDs, AWS secret keys, GitHub, Slack, Google,
+  OpenAI and Anthropic keys, JWT, private keys, high-entropy secrets, credit cards, email, US SSN,
+  IBAN), plus `keywords` files and custom `regex` patterns, each with a `severity` and an `action`
+  (`block`, `monitor`, `allow`).
+- `access_keys` recognises an access key ID by its vendor prefix rather than by vendor. It ships with
+  AWS, Alibaba and Tencent, and takes a `prefixes` list you can edit in the console or the file. Give
+  a prefix an exact `length` when the vendor publishes one; leave it blank and the key may be any
+  length between `min_length` and `max_length`, in which case it must also look random rather than
+  like a word. Setting `prefixes` replaces the defaults, so repeat the ones you want to keep.
+  `aws_access_key` still works and covers only AWS; the console offers to switch a rule over.
 - `allowlist`: literal values, patterns, email domains, client CIDRs, a bypass header for trusted
   automation, and JSON-pointer globs for segments that must not be scanned (tool schemas).
 - `mode.monitor: true` never blocks and only logs, which is the recommended rollout setting.
@@ -117,6 +124,9 @@ Python and .NET's `HttpClient` do not hard-fail on unknown revocation status by 
 - `reload`: the file is watched and re-applied within a second; `POST /-/reload` and `SIGHUP` also
   work. Set `poll_interval` on Docker Desktop bind mounts.
 - Relative paths in the file resolve against the file's own directory.
+- `AIGK_*` environment variables override individual settings for the running process only. Applying a
+  change from the console rewrites the file as the operator wrote it, so a path or a secret supplied
+  by the environment is never written into the configuration.
 
 Environment overrides: `AIGK_LISTEN_FORWARD`, `AIGK_LISTEN_ADMIN`, `AIGK_CA_CERT`, `AIGK_CA_KEY`,
 `AIGK_MODE_MONITOR`, `AIGK_TUNNEL_UNMATCHED`, `AIGK_AUDIT_FILE`, `AIGK_RELOAD_POLL_INTERVAL`,

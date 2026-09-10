@@ -116,8 +116,19 @@ rules:
   - id: secrets
     severity: critical
     action: block
-    detectors: [aws_access_key, aws_secret_key, github_token, slack_token, google_api_key,
+    detectors: [access_keys, aws_secret_key, github_token, slack_token, google_api_key,
                 openai_key, anthropic_key, jwt, private_key, high_entropy_secret]
+    # access_keys matches an access key ID by its vendor prefix. It ships
+    # with AWS, Alibaba and Tencent; uncomment to cover your own systems.
+    # Replacing the list replaces the defaults, so repeat the ones you want.
+    # options:
+    #   access_keys:
+    #     prefixes:
+    #       - { prefix: AKIA, length: 16, note: AWS long-term }
+    #       - { prefix: ASIA, length: 16, note: AWS temporary }
+    #       - { prefix: CORP, note: our own gateway }   # no length: uses the range below
+    #     min_length: 16
+    #     max_length: 40
 
   - id: pii
     severity: high
