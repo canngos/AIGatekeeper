@@ -197,9 +197,17 @@ type KeywordsConfig struct {
 
 // RegexConfig is a user-defined regex detector.
 type RegexConfig struct {
-	ID        string `yaml:"id"`
-	Pattern   string `yaml:"pattern,omitempty"`
-	MinLength int    `yaml:"min_length,omitempty"`
+	ID      string `yaml:"id"`
+	Pattern string `yaml:"pattern,omitempty"`
+	// MinLength discards matches shorter than this, which is the cheapest
+	// way to stop a loose pattern reporting fragments.
+	MinLength int `yaml:"min_length,omitempty"`
+	// Severity overrides the rule's for this pattern alone, so one rule can
+	// carry a critical key format and a low-severity internal hostname.
+	Severity string `yaml:"severity,omitempty"`
+	// Group files the pattern alongside the built-in detectors it belongs
+	// with in the console. It has no effect on matching.
+	Group string `yaml:"group,omitempty"`
 }
 
 // AllowlistConfig lists exceptions that suppress findings or bypass scanning.
@@ -527,12 +535,26 @@ func (c *Config) Validate() error {
 		if len(r.Detectors) == 0 && len(r.Regex) == 0 && r.Keywords.File == "" && len(r.Keywords.List) == 0 {
 			ve.add(p, "rule has no detectors, regex or keywords")
 		}
+		regexIDs := map[string]bool{}
 		for j, rx := range r.Regex {
-			if rx.ID == "" {
-				ve.add(fmt.Sprintf("%s.regex[%d].id", p, j), "is required")
+			rp := fmt.Sprintf("%s.regex[%d]", p, j)
+			switch {
+			case rx.ID == "":
+				ve.add(rp+".id", "is required")
+			case regexIDs[rx.ID]:
+				ve.add(rp+".id", "duplicate pattern name %q in this rule", rx.ID)
 			}
-			if _, err := regexp.Compile(rx.Pattern); err != nil {
-				ve.add(fmt.Sprintf("%s.regex[%d].pattern", p, j), "invalid regex: %v", err)
+			regexIDs[rx.ID] = true
+			if rx.Pattern == "" {
+				ve.add(rp+".pattern", "is required")
+			} else if _, err := regexp.Compile(rx.Pattern); err != nil {
+				ve.add(rp+".pattern", "invalid regex: %v", err)
+			}
+			if rx.Severity != "" && !isOneOf(rx.Severity, "low", "medium", "high", "critical") {
+				ve.add(rp+".severity", "must be low, medium, high or critical")
+			}
+			if rx.MinLength < 0 {
+				ve.add(rp+".min_length", "cannot be negative")
 			}
 		}
 	}

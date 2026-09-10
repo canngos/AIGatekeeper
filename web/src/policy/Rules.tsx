@@ -83,36 +83,26 @@ export function Rules({
 
             <DetectorPicker draft={draft} setDraft={setDraft} index={i} detectors={detectors} />
 
-            <div className="grid gap-3 md:grid-cols-2">
-              <Field label="Your own words and phrases" hint="One per line. Project code names, customer names, anything that should not leave.">
-                <TextArea
-                  rows={4}
-                  value={(rule.keywords?.list ?? []).join("\n")}
-                  onChange={(v) =>
-                    update(draft, setDraft, (d) => {
-                      d.rules[i].keywords = { ...(d.rules[i].keywords ?? {}), list: splitLines(v) };
-                    })
-                  }
-                />
-              </Field>
-              <Field label="Your own patterns" hint="One per line, written as name = expression, for a format the built-ins do not know.">
-                <TextArea
-                  rows={4}
-                  mono
-                  value={(rule.regex ?? []).map((r) => `${r.id} = ${r.pattern}`).join("\n")}
-                  onChange={(v) =>
-                    update(draft, setDraft, (d) => {
-                      d.rules[i].regex = splitLines(v).map((line) => {
-                        const at = line.indexOf("=");
-                        return at < 0
-                          ? { id: line.trim(), pattern: "" }
-                          : { id: line.slice(0, at).trim(), pattern: line.slice(at + 1).trim() };
-                      });
-                    })
-                  }
-                />
-              </Field>
-            </div>
+            <Field
+              label="Your own words and phrases"
+              hint="One per line. Project code names, customer names, anything that should not leave. For a format rather than a word, add a pattern in the list above."
+            >
+              <TextArea
+                rows={4}
+                value={(rule.keywords?.list ?? []).join("\n")}
+                onChange={(v) =>
+                  update(draft, setDraft, (d) => {
+                    d.rules[i].keywords = { ...(d.rules[i].keywords ?? {}), list: splitLines(v) };
+                  })
+                }
+              />
+            </Field>
+            {rule.keywords?.file && (
+              <p className="text-[12px]" style={{ color: "var(--ink-faint)" }}>
+                This rule also reads words from <span className="wire">{rule.keywords.file}</span>, which the forms do
+                not edit.
+              </p>
+            )}
 
             <div className="border-t pt-3" style={{ borderColor: "var(--rule)" }}>
               <Button

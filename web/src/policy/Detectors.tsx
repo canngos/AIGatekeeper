@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { AccessKeyPrefix, ConfigDoc, DetectorInfo, DetectorOption } from "../api/types";
+import type { AccessKeyPrefix, ConfigDoc, CustomPattern, DetectorInfo, DetectorOption } from "../api/types";
 import { Button, Severity, Tag } from "../components/primitives";
 import { update } from "./shared";
 
@@ -7,9 +7,11 @@ import { update } from "./shared";
     server adds later falls in after these, alphabetically. */
 const GROUP_ORDER = ["Keys and tokens", "Personal data"];
 
-function groupsOf(detectors: DetectorInfo[]): string[] {
-  const seen = [...new Set(detectors.map((d) => d.group || "Other"))];
-  return seen.sort((a, b) => {
+/** Where a pattern with no group of its own is filed. */
+const OWN_GROUP = "Your own";
+
+function sortGroups(names: Iterable<string>): string[] {
+  return [...new Set(names)].sort((a, b) => {
     const ia = GROUP_ORDER.indexOf(a);
     const ib = GROUP_ORDER.indexOf(b);
     if (ia === -1 && ib === -1) return a.localeCompare(b);
@@ -43,6 +45,12 @@ export function DetectorPicker({
   // A retired detector is hidden unless this rule still uses it, in which
   // case hiding it would leave something enabled that nobody can see.
   const visible = detectors.filter((d) => !d.deprecated || selected.has(d.id));
+  const custom = rule.regex ?? [];
+  const groups = sortGroups([
+    ...visible.map((d) => d.group || OWN_GROUP),
+    ...custom.map((c) => c.group || OWN_GROUP),
+    OWN_GROUP,
+  ]);
 
   function toggle(id: string) {
     update(draft, setDraft, (d) => {
@@ -67,34 +75,161 @@ export function DetectorPicker({
       <div className="flex items-baseline justify-between">
         <span className="text-[12.5px] font-medium">Looks for</span>
         <span className="text-[12px]" style={{ color: "var(--ink-faint)" }}>
-          {selected.size} of {visible.length} selected
+          {selected.size} built in, {custom.length} of your own
         </span>
       </div>
 
-      {groupsOf(visible).map((group) => (
-        <div key={group}>
-          <h4 className="mb-1 text-[12px] font-semibold" style={{ color: "var(--ink-muted)" }}>
-            {group}
-          </h4>
-          <ul className="border" style={{ borderColor: "var(--rule)" }}>
-            {visible
-              .filter((d) => (d.group || "Other") === group)
-              .sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id))
-              .map((d) => (
-                <DetectorRow
-                  key={d.id}
-                  detector={d}
-                  checked={selected.has(d.id)}
-                  onToggle={() => toggle(d.id)}
-                  onReplace={d.replaced_by ? () => replace(d.id, d.replaced_by!) : undefined}
-                  draft={draft}
-                  setDraft={setDraft}
-                  index={index}
-                />
+      {groups.map((group) => {
+        const builtins = visible
+          .filter((d) => (d.group || OWN_GROUP) === group)
+          .sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id));
+        const mine = custom
+          .map((pattern, at) => ({ pattern, at }))
+          .filter(({ pattern }) => (pattern.group || OWN_GROUP) === group);
+        return (
+          <div key={group}>
+            <h4 className="mb-1 text-[12px] font-semibold" style={{ color: "var(--ink-muted)" }}>
+              {group}
+            </h4>
+            <div className="border" style={{ borderColor: "var(--rule)" }}>
+              {builtins.length > 0 && (
+                <ul>
+                  {builtins.map((d) => (
+                    <DetectorRow
+                      key={d.id}
+                      detector={d}
+                      checked={selected.has(d.id)}
+                      onToggle={() => toggle(d.id)}
+                      onReplace={d.replaced_by ? () => replace(d.id, d.replaced_by!) : undefined}
+                      draft={draft}
+                      setDraft={setDraft}
+                      index={index}
+                    />
+                  ))}
+                </ul>
+              )}
+              <CustomPatterns
+                group={group}
+                entries={mine}
+                all={custom}
+                ruleSeverity={rule.severity}
+                onChange={(next) => update(draft, setDraft, (d) => void (d.rules[index].regex = next))}
+              />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * The patterns a deployment writes itself, shown in the group it filed them
+ * under, so an internal key format sits with the other key formats instead
+ * of in a box at the bottom of the page.
+ *
+ * The name is not decoration. It is what every finding, alert and report
+ * will call this thing, so it comes first and it is required.
+ */
+function CustomPatterns({
+  group,
+  entries,
+  all,
+  ruleSeverity,
+  onChange,
+}: {
+  group: string;
+  entries: { pattern: CustomPattern; at: number }[];
+  all: CustomPattern[];
+  ruleSeverity: string;
+  onChange: (next: CustomPattern[]) => void;
+}) {
+  const edit = (at: number, patch: Partial<CustomPattern>) =>
+    onChange(all.map((p, i) => (i === at ? { ...p, ...patch } : p)));
+  const label = (row: number, field: string) => `${group} pattern ${row + 1} ${field}`;
+
+  return (
+    <div className="border-t px-3 py-2" style={{ borderColor: "var(--rule)", background: "var(--surface-sunken)" }}>
+      {entries.length > 0 && (
+        <table className="w-full border-collapse text-[12.5px]">
+          <thead>
+            <tr style={{ color: "var(--ink-faint)" }}>
+              {["Name", "Pattern", "Severity", "Shortest match"].map((h) => (
+                <th key={h} className="border-b py-1 pr-2 text-left font-medium" style={{ borderColor: "var(--rule)" }}>
+                  {h}
+                </th>
               ))}
-          </ul>
-        </div>
-      ))}
+              <th className="border-b py-1" style={{ borderColor: "var(--rule)" }} />
+            </tr>
+          </thead>
+          <tbody>
+            {entries.map(({ pattern, at }, row) => (
+              <tr key={at}>
+                <td className="w-44 py-1 pr-2">
+                  <input
+                    aria-label={label(row, "name")}
+                    value={pattern.id ?? ""}
+                    placeholder="corp_gateway_key"
+                    onChange={(e) => edit(at, { id: e.target.value })}
+                    className="wire w-full border px-1.5 py-0.5"
+                    style={{ background: "var(--surface)", borderColor: "var(--rule-strong)" }}
+                  />
+                </td>
+                <td className="py-1 pr-2">
+                  <input
+                    aria-label={label(row, "expression")}
+                    value={pattern.pattern ?? ""}
+                    placeholder="\bCORPKEY-[A-Z0-9]{24}\b"
+                    onChange={(e) => edit(at, { pattern: e.target.value })}
+                    className="wire w-full border px-1.5 py-0.5"
+                    style={{ background: "var(--surface)", borderColor: "var(--rule-strong)" }}
+                  />
+                </td>
+                <td className="py-1 pr-2">
+                  <select
+                    aria-label={label(row, "severity")}
+                    value={pattern.severity ?? ""}
+                    onChange={(e) => edit(at, { severity: (e.target.value || undefined) as CustomPattern["severity"] })}
+                    className="border px-1 py-0.5 text-[12.5px]"
+                    style={{ background: "var(--surface)", borderColor: "var(--rule-strong)" }}
+                  >
+                    <option value="">Same as the rule ({ruleSeverity})</option>
+                    {["low", "medium", "high", "critical"].map((sev) => (
+                      <option key={sev} value={sev}>
+                        {sev}
+                      </option>
+                    ))}
+                  </select>
+                </td>
+                <td className="py-1 pr-2">
+                  <input
+                    aria-label={label(row, "shortest match")}
+                    type="number"
+                    placeholder="any"
+                    value={pattern.min_length ?? ""}
+                    onChange={(e) => edit(at, { min_length: e.target.value === "" ? undefined : Number(e.target.value) })}
+                    className="w-20 border px-1.5 py-0.5"
+                    style={{ background: "var(--surface)", borderColor: "var(--rule-strong)" }}
+                  />
+                </td>
+                <td className="py-1 text-right">
+                  <Button variant="quiet" onClick={() => onChange(all.filter((_, i) => i !== at))}>
+                    Remove
+                  </Button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <div className="mt-1 flex flex-wrap items-baseline gap-3">
+        <Button onClick={() => onChange([...all, { id: "", pattern: "", group }])}>Add your own</Button>
+        <span className="max-w-[62ch] text-[12px]" style={{ color: "var(--ink-faint)" }}>
+          {entries.length === 0
+            ? "A format only your company would recognise, matched here alongside the built-in ones."
+            : "The name is what every finding and alert will call it. Patterns are RE2: no lookahead, no backreferences."}
+        </span>
+      </div>
     </div>
   );
 }

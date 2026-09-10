@@ -259,7 +259,12 @@ func compileRule(cfg *config.Config, rc config.RuleConfig, opts dlp.Options) (*R
 		}
 	}
 	for _, rx := range rc.Regex {
-		d, err := dlp.NewCustomRegexDetector(rx.ID, rc.Severity, rx.Pattern, rx.MinLength)
+		// A pattern may rank itself; most do not and take the rule's rank.
+		severity := rx.Severity
+		if severity == "" {
+			severity = rc.Severity
+		}
+		d, err := dlp.NewCustomRegexDetector(rx.ID, severity, rx.Pattern, rx.MinLength)
 		if err != nil {
 			return nil, fmt.Errorf("rule %s: %w", rc.ID, err)
 		}

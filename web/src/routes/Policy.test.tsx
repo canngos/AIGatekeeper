@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Policy } from "./Policy";
@@ -185,6 +185,80 @@ describe("Policy", () => {
       { prefix: "LTAI", note: "Alibaba Cloud" },
       { prefix: "CORP", length: 24 },
     ]);
+  });
+
+  it("defines a pattern of its own inside the group it belongs to", async () => {
+    const user = await openRule();
+
+    // Every group offers it, including one with nothing of its own yet.
+    expect(screen.getAllByRole("button", { name: "Add your own" }).length).toBeGreaterThan(1);
+    const keysGroup = screen.getByText("Keys and tokens").parentElement!;
+    await user.click(within(keysGroup).getByRole("button", { name: "Add your own" }));
+
+    await user.type(screen.getByLabelText("Keys and tokens pattern 1 name"), "corp_gateway_key");
+    // Typed rather than clicked: user-event reads [ and { as key descriptors,
+    // and a regular expression is mostly those.
+    fireEvent.change(screen.getByLabelText("Keys and tokens pattern 1 expression"), {
+      target: { value: "CORPKEY-[A-Z0-9]{24}" },
+    });
+    await user.selectOptions(screen.getByLabelText("Keys and tokens pattern 1 severity"), "critical");
+    await user.type(screen.getByLabelText("Keys and tokens pattern 1 shortest match"), "8");
+
+    const applied = vi.spyOn(api, "applyConfig").mockResolvedValue({ applied: true, version: "v2", loaded_at: new Date().toISOString() });
+    await user.click(screen.getByRole("button", { name: "Apply changes" }));
+    await waitFor(() => expect(applied).toHaveBeenCalled());
+
+    const sent = applied.mock.calls[0][0] as { config: { rules: { regex?: unknown[] }[] } };
+    expect(sent.config.rules[0].regex).toEqual([
+      {
+        id: "corp_gateway_key",
+        pattern: "CORPKEY-[A-Z0-9]{24}",
+        severity: "critical",
+        min_length: 8,
+        group: "Keys and tokens",
+      },
+    ]);
+  });
+
+  it("shows an existing pattern in its group and can remove it", async () => {
+    vi.spyOn(api, "config").mockResolvedValue({
+      ...config,
+      config: {
+        ...config.config,
+        rules: [
+          {
+            ...config.config.rules[0],
+            regex: [{ id: "staff_number", pattern: "STAFF-[0-9]{6}", group: "Personal data" }],
+          },
+        ],
+      },
+    });
+    const user = await openRule();
+
+    expect(screen.getByLabelText("Personal data pattern 1 name")).toHaveValue("staff_number");
+    // No severity of its own means it follows the rule.
+    expect(screen.getByLabelText("Personal data pattern 1 severity")).toHaveValue("");
+    expect(screen.getByText("Same as the rule (critical)")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Keys and tokens pattern 1 name")).not.toBeInTheDocument();
+
+    const personal = screen.getByText("Personal data").parentElement!;
+    await user.click(within(personal).getByRole("button", { name: "Remove" }));
+
+    expect(screen.queryByLabelText("Personal data pattern 1 name")).not.toBeInTheDocument();
+  });
+
+  it("files a pattern with no group of its own under Your own", async () => {
+    vi.spyOn(api, "config").mockResolvedValue({
+      ...config,
+      config: {
+        ...config.config,
+        rules: [{ ...config.config.rules[0], regex: [{ id: "project_codename", pattern: "falcon|orion" }] }],
+      },
+    });
+    await openRule();
+
+    expect(screen.getByText("Your own")).toBeInTheDocument();
+    expect(screen.getByLabelText("Your own pattern 1 name")).toHaveValue("project_codename");
   });
 
   it("resetting prefixes drops the option so the defaults apply again", async () => {

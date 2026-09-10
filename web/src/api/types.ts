@@ -174,8 +174,22 @@ export interface RuleConfig {
   action?: "block" | "monitor" | "allow";
   detectors?: string[] | null;
   keywords?: { file?: string; list?: string[] | null; case_insensitive?: boolean; word_boundary?: boolean };
-  regex?: { id: string; pattern: string; min_length?: number }[] | null;
+  regex?: CustomPattern[] | null;
   options?: Record<string, Record<string, unknown>>;
+}
+
+/** A pattern the deployment wrote itself, filed alongside the built-in
+    detectors it belongs with. */
+export interface CustomPattern {
+  /** Recorded on every finding, so keep it short and stable. */
+  id: string;
+  pattern: string;
+  /** Discards matches shorter than this. */
+  min_length?: number;
+  /** Overrides the rule's severity for this pattern alone. */
+  severity?: "low" | "medium" | "high" | "critical";
+  /** Which group of the detector list it appears in. */
+  group?: string;
 }
 
 export interface AllowlistConfig {
