@@ -19,7 +19,7 @@ structured audit trail. No third-party SaaS, one static binary, Apache-2.0.
    answered with either an HTTP 403 in the service's error format (`block_mode: reject`) or an HTTP 200
    synthetic completion that tells the developer why (`block_mode: synthetic`), so the IDE never hangs.
 4. Every transaction is logged as one JSON line on stdout (for ELK/Splunk) with masked previews of
-   the matched values. Prompt text is never persisted.
+   the matched values. Prompt text is not persisted unless you switch it on.
 5. Hosts outside the policy are tunnelled as opaque TCP streams and never decrypted.
 
 ```
@@ -134,7 +134,7 @@ exposed at `GET /metrics` on the admin listener (expvar JSON).
 
 ## Web console
 
-The admin listener serves a console at `http://127.0.0.1:9090/` with five views:
+The admin listener serves a console at `http://127.0.0.1:9090/` with six views:
 
 - **Overview** shows what proportion of traffic was forwarded, flagged and stopped over a chosen
   window, requests over time, and which rules, detectors, services and workstations were involved.
@@ -144,7 +144,10 @@ The admin listener serves a console at `http://127.0.0.1:9090/` with five views:
   intact. Check validates without saving; Apply writes the file and the proxy reloads in place.
 - **Tester** runs a prompt or a captured request body through the live policy, or through a
   candidate configuration, without contacting a provider.
-- **Status** reports the loaded policy, listeners, reload history and audit sink health.
+- **People** lists who is running into the policy and the alerts raised about them, with the
+  contributing requests and an acknowledge button.
+- **Status** reports the loaded policy, listeners, attribution, alerting, reload history and audit
+  sink health, and can send a test alert through the real relay.
 
 The console and its API stay closed until a credential exists:
 
@@ -249,7 +252,7 @@ only if you run the two on different origins.
 - Proxy credentials travel as HTTP Basic between workstation and proxy, so the forward listener
   belongs on a trusted network segment. Without `identity.proxy_auth` the listener is unauthenticated
   and anyone who can reach it can use it.
-- Findings are stored masked; prompt text is never persisted.
+- Findings are stored masked. Prompt text is stored only if you set `audit.capture_prompts`.
 - The admin listener binds to loopback by default. On any other address set `admin.tls_cert` and
   `admin.tls_key`, or put it behind a TLS terminator.
 
