@@ -1,0 +1,161 @@
+@import "tailwindcss";
+
+/*
+  AIGatekeeper console tokens.
+
+  Two rules govern the whole interface:
+    1. Monospace means "verbatim from the wire" -- hosts, paths, JSON
+       pointers, previews, hashes. Human labels are always sans.
+    2. A decision is encoded structurally (marker shape, left edge) as well
+       as by colour, so it survives greyscale printing and colour blindness.
+*/
+
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, Consolas, monospace;
+}
+
+:root {
+  color-scheme: light dark;
+
+  --ground: #edeef0;
+  --surface: #ffffff;
+  --surface-sunken: #e5e7ea;
+  --ink: #161a20;
+  --ink-muted: #5c6572;
+  --ink-faint: #868e9b;
+  --rule: #d3d7dd;
+  --rule-strong: #b8bec7;
+  /* The spine the event markers hang from: needs to read as a line, not a hairline. */
+  --wire: #aab2bd;
+
+  --accent: #2b4c7e;
+  --accent-soft: #dde5f2;
+  --accent-ink: #ffffff;
+
+  --allow: #2d6a5a;
+  --allow-soft: #dceae4;
+  --monitor: #8a6212;
+  --monitor-soft: #f4e8cf;
+  --block: #8e2f3e;
+  --block-soft: #f4dcdf;
+
+  --focus: #2b4c7e;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ground: #14171c;
+    --surface: #1b1f26;
+    --surface-sunken: #101318;
+    --ink: #e4e7ec;
+    --ink-muted: #9aa3b0;
+    --ink-faint: #6f7885;
+    --rule: #2b313a;
+    --rule-strong: #3c434e;
+    --wire: #525c6b;
+
+    --accent: #7fa8e0;
+    --accent-soft: #21324a;
+    --accent-ink: #0e1116;
+
+    --allow: #5fbfa3;
+    --allow-soft: #17342d;
+    --monitor: #d9a441;
+    --monitor-soft: #3a2f13;
+    --block: #e0697c;
+    --block-soft: #3d1c23;
+
+    --focus: #7fa8e0;
+  }
+}
+
+* {
+  border-color: var(--rule);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  font-variant-numeric: tabular-nums;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+/* Numbers are data, never decoration: always tabular so columns line up. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+.wire {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  letter-spacing: -0.01em;
+}
+
+/* The single motion moment: a new row arriving on the live feed. */
+@keyframes arrive {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.arriving {
+  animation: arrive 180ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .arriving {
+    animation: none;
+  }
+  * {
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* CodeMirror sits inside our own frame; strip its default chrome. */
+.cm-editor {
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12.5px;
+}
+.cm-editor.cm-focused {
+  outline: none;
+}
+.cm-gutters {
+  background: var(--surface-sunken);
+  color: var(--ink-faint);
+  border-right: 1px solid var(--rule);
+}
+.cm-activeLine,
+.cm-activeLineGutter {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}

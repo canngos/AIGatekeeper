@@ -28,14 +28,14 @@ test:
 test-docker:
 	docker run --rm -v "$(CURDIR):/src" -v aigk-gomod:/go/pkg/mod -v aigk-gocache:/root/.cache/go-build -w /src golang:1.27 go test ./... -race -count=1
 
-## test-ui: run frontend tests
+## test-ui: run frontend tests (vitest)
 test-ui:
-	cd web && npm run test -- --run
+	cd web && npm test
 
 ## lint: vet Go code and type-check the frontend
 lint:
 	go vet ./...
-	cd web && npm run lint && npm run typecheck
+	cd web && npx tsc --noEmit
 
 fmt:
 	gofmt -l -w .

@@ -28,107 +28,107 @@ const (
 // Config is the root of aigatekeeper.yaml.
 type Config struct {
 	Version int          `yaml:"version"`
-	Listen  ListenConfig `yaml:"listen"`
-	CA      CAConfig     `yaml:"ca"`
-	TLS     TLSConfig    `yaml:"tls"`
-	Limits  LimitsConfig `yaml:"limits"`
-	Mode    ModeConfig   `yaml:"mode"`
-	Reload  ReloadConfig `yaml:"reload"`
-	Audit   AuditConfig  `yaml:"audit"`
-	Admin   AdminConfig  `yaml:"admin"`
+	Listen  ListenConfig `yaml:"listen,omitempty"`
+	CA      CAConfig     `yaml:"ca,omitempty"`
+	TLS     TLSConfig    `yaml:"tls,omitempty"`
+	Limits  LimitsConfig `yaml:"limits,omitempty"`
+	Mode    ModeConfig   `yaml:"mode,omitempty"`
+	Reload  ReloadConfig `yaml:"reload,omitempty"`
+	Audit   AuditConfig  `yaml:"audit,omitempty"`
+	Admin   AdminConfig  `yaml:"admin,omitempty"`
 
 	TunnelUnmatched bool   `yaml:"tunnel_unmatched"`
-	DefaultAction   string `yaml:"default_action"`
-	BlockMessage    string `yaml:"block_message"`
+	DefaultAction   string `yaml:"default_action,omitempty"`
+	BlockMessage    string `yaml:"block_message,omitempty"`
 
-	Services  []ServiceConfig `yaml:"services"`
-	Rules     []RuleConfig    `yaml:"rules"`
-	Allowlist AllowlistConfig `yaml:"allowlist"`
+	Services  []ServiceConfig `yaml:"services,omitempty"`
+	Rules     []RuleConfig    `yaml:"rules,omitempty"`
+	Allowlist AllowlistConfig `yaml:"allowlist,omitempty"`
 
 	baseDir string
 }
 
 // ListenConfig holds listener addresses.
 type ListenConfig struct {
-	Forward string          `yaml:"forward"`
-	Admin   string          `yaml:"admin"`
-	Reverse []ReverseConfig `yaml:"reverse"`
+	Forward string          `yaml:"forward,omitempty"`
+	Admin   string          `yaml:"admin,omitempty"`
+	Reverse []ReverseConfig `yaml:"reverse,omitempty"`
 }
 
 // ReverseConfig defines a reverse-proxy listener in front of a local model
 // server such as Ollama, for clients that bypass proxies for localhost.
 type ReverseConfig struct {
 	Name     string `yaml:"name"`
-	Listen   string `yaml:"listen"`
-	Upstream string `yaml:"upstream"`
-	Service  string `yaml:"service"`
+	Listen   string `yaml:"listen,omitempty"`
+	Upstream string `yaml:"upstream,omitempty"`
+	Service  string `yaml:"service,omitempty"`
 }
 
 // CAConfig locates the root CA and tunes leaf issuance.
 type CAConfig struct {
-	Cert      string   `yaml:"cert"`
-	Key       string   `yaml:"key"`
-	LeafTTL   Duration `yaml:"leaf_ttl"`
-	CacheSize int      `yaml:"cache_size"`
+	Cert      string   `yaml:"cert,omitempty"`
+	Key       string   `yaml:"key,omitempty"`
+	LeafTTL   Duration `yaml:"leaf_ttl,omitempty"`
+	CacheSize int      `yaml:"cache_size,omitempty"`
 }
 
 // TLSConfig tunes client-facing and upstream TLS.
 type TLSConfig struct {
-	AdvertiseHTTP2     bool     `yaml:"advertise_http2"`
-	UpstreamExtraRoots []string `yaml:"upstream_extra_roots"`
-	UpstreamInsecure   bool     `yaml:"upstream_insecure"`
-	UpstreamProxy      string   `yaml:"upstream_proxy"`
+	AdvertiseHTTP2     bool     `yaml:"advertise_http2,omitempty"`
+	UpstreamExtraRoots []string `yaml:"upstream_extra_roots,omitempty"`
+	UpstreamInsecure   bool     `yaml:"upstream_insecure,omitempty"`
+	UpstreamProxy      string   `yaml:"upstream_proxy,omitempty"`
 }
 
 // LimitsConfig bounds request handling.
 type LimitsConfig struct {
-	MaxBodyBytes     ByteSize `yaml:"max_body_bytes"`
-	MaxDecodedBytes  ByteSize `yaml:"max_decoded_bytes"`
-	OversizeAction   string   `yaml:"oversize_action"`
-	ParseErrorAction string   `yaml:"parse_error_action"`
-	UpstreamTimeout  Duration `yaml:"upstream_timeout"`
+	MaxBodyBytes     ByteSize `yaml:"max_body_bytes,omitempty"`
+	MaxDecodedBytes  ByteSize `yaml:"max_decoded_bytes,omitempty"`
+	OversizeAction   string   `yaml:"oversize_action,omitempty"`
+	ParseErrorAction string   `yaml:"parse_error_action,omitempty"`
+	UpstreamTimeout  Duration `yaml:"upstream_timeout,omitempty"`
 }
 
 // ModeConfig holds global behaviour switches.
 type ModeConfig struct {
-	Monitor bool `yaml:"monitor"`
+	Monitor bool `yaml:"monitor,omitempty"`
 }
 
 // ReloadConfig tunes configuration hot reload.
 type ReloadConfig struct {
 	Watch        bool     `yaml:"watch"`
-	Debounce     Duration `yaml:"debounce"`
-	PollInterval Duration `yaml:"poll_interval"`
+	Debounce     Duration `yaml:"debounce,omitempty"`
+	PollInterval Duration `yaml:"poll_interval,omitempty"`
 }
 
 // AuditConfig configures audit sinks.
 type AuditConfig struct {
 	Stdout         bool              `yaml:"stdout"`
-	File           string            `yaml:"file"`
+	File           string            `yaml:"file,omitempty"`
 	IncludePreview bool              `yaml:"include_preview"`
 	LogAllowed     bool              `yaml:"log_allowed"`
-	SQLite         AuditSQLiteConfig `yaml:"sqlite"`
+	SQLite         AuditSQLiteConfig `yaml:"sqlite,omitempty"`
 }
 
 // AuditSQLiteConfig configures the embedded history store that backs the
 // admin UI. Stdout logging is independent of this.
 type AuditSQLiteConfig struct {
-	Enabled       bool     `yaml:"enabled"`
-	Path          string   `yaml:"path"`
-	MaxAge        Duration `yaml:"max_age"`
-	MaxRows       int64    `yaml:"max_rows"`
-	BatchSize     int      `yaml:"batch_size"`
-	BatchInterval Duration `yaml:"batch_interval"`
-	SweepInterval Duration `yaml:"sweep_interval"`
-	Queue         int      `yaml:"queue"`
+	Enabled       bool     `yaml:"enabled,omitempty"`
+	Path          string   `yaml:"path,omitempty"`
+	MaxAge        Duration `yaml:"max_age,omitempty"`
+	MaxRows       int64    `yaml:"max_rows,omitempty"`
+	BatchSize     int      `yaml:"batch_size,omitempty"`
+	BatchInterval Duration `yaml:"batch_interval,omitempty"`
+	SweepInterval Duration `yaml:"sweep_interval,omitempty"`
+	Queue         int      `yaml:"queue,omitempty"`
 }
 
 // AdminConfig configures the admin API / UI listener.
 type AdminConfig struct {
-	Auth        AdminAuthConfig `yaml:"auth"`
-	TLSCert     string          `yaml:"tls_cert"`
-	TLSKey      string          `yaml:"tls_key"`
-	CORSOrigins []string        `yaml:"cors_origins"`
+	Auth        AdminAuthConfig `yaml:"auth,omitempty"`
+	TLSCert     string          `yaml:"tls_cert,omitempty"`
+	TLSKey      string          `yaml:"tls_key,omitempty"`
+	CORSOrigins []string        `yaml:"cors_origins,omitempty"`
 	UI          bool            `yaml:"ui"`
 }
 
@@ -136,11 +136,11 @@ type AdminConfig struct {
 // `aigatekeeper admin hash-password`; either field may come from the
 // environment instead (AIGK_ADMIN_PASSWORD_HASH, AIGK_ADMIN_TOKEN).
 type AdminAuthConfig struct {
-	PasswordHash   string   `yaml:"password_hash"`
-	Token          string   `yaml:"token"`
-	SessionTTL     Duration `yaml:"session_ttl"`
-	LoginBurst     int      `yaml:"login_burst"`
-	LoginPerMinute int      `yaml:"login_per_minute"`
+	PasswordHash   string   `yaml:"password_hash,omitempty"`
+	Token          string   `yaml:"token,omitempty"`
+	SessionTTL     Duration `yaml:"session_ttl,omitempty"`
+	LoginBurst     int      `yaml:"login_burst,omitempty"`
+	LoginPerMinute int      `yaml:"login_per_minute,omitempty"`
 }
 
 // Configured reports whether an admin credential is set.
@@ -149,53 +149,53 @@ func (a AdminAuthConfig) Configured() bool { return a.PasswordHash != "" || a.To
 // ServiceConfig describes one intercepted GenAI service.
 type ServiceConfig struct {
 	Name             string   `yaml:"name"`
-	Hosts            []string `yaml:"hosts"`
-	Extractor        string   `yaml:"extractor"`
-	BlockMode        string   `yaml:"block_mode"`
-	PassthroughPaths []string `yaml:"passthrough_paths"`
-	Rules            []string `yaml:"rules"`
+	Hosts            []string `yaml:"hosts,omitempty"`
+	Extractor        string   `yaml:"extractor,omitempty"`
+	BlockMode        string   `yaml:"block_mode,omitempty"`
+	PassthroughPaths []string `yaml:"passthrough_paths,omitempty"`
+	Rules            []string `yaml:"rules,omitempty"`
 }
 
 // RuleConfig groups detectors with a severity and an action.
 type RuleConfig struct {
 	ID        string                    `yaml:"id"`
 	Severity  string                    `yaml:"severity"`
-	Action    string                    `yaml:"action"`
-	Detectors []string                  `yaml:"detectors"`
-	Options   map[string]map[string]any `yaml:"options"`
-	Keywords  KeywordsConfig            `yaml:"keywords"`
-	Regex     []RegexConfig             `yaml:"regex"`
+	Action    string                    `yaml:"action,omitempty"`
+	Detectors []string                  `yaml:"detectors,omitempty"`
+	Options   map[string]map[string]any `yaml:"options,omitempty"`
+	Keywords  KeywordsConfig            `yaml:"keywords,omitempty"`
+	Regex     []RegexConfig             `yaml:"regex,omitempty"`
 }
 
 // KeywordsConfig configures a keyword list detector for a rule.
 type KeywordsConfig struct {
-	File            string   `yaml:"file"`
-	List            []string `yaml:"list"`
-	CaseInsensitive bool     `yaml:"case_insensitive"`
-	WordBoundary    bool     `yaml:"word_boundary"`
+	File            string   `yaml:"file,omitempty"`
+	List            []string `yaml:"list,omitempty"`
+	CaseInsensitive bool     `yaml:"case_insensitive,omitempty"`
+	WordBoundary    bool     `yaml:"word_boundary,omitempty"`
 }
 
 // RegexConfig is a user-defined regex detector.
 type RegexConfig struct {
 	ID        string `yaml:"id"`
-	Pattern   string `yaml:"pattern"`
-	MinLength int    `yaml:"min_length"`
+	Pattern   string `yaml:"pattern,omitempty"`
+	MinLength int    `yaml:"min_length,omitempty"`
 }
 
 // AllowlistConfig lists exceptions that suppress findings or bypass scanning.
 type AllowlistConfig struct {
-	Values       []string           `yaml:"values"`
-	Patterns     []string           `yaml:"patterns"`
-	EmailDomains []string           `yaml:"email_domains"`
-	ClientCIDRs  []string           `yaml:"client_cidrs"`
-	HeaderBypass HeaderBypassConfig `yaml:"header_bypass"`
-	SegmentPaths []string           `yaml:"segment_paths"`
+	Values       []string           `yaml:"values,omitempty"`
+	Patterns     []string           `yaml:"patterns,omitempty"`
+	EmailDomains []string           `yaml:"email_domains,omitempty"`
+	ClientCIDRs  []string           `yaml:"client_cidrs,omitempty"`
+	HeaderBypass HeaderBypassConfig `yaml:"header_bypass,omitempty"`
+	SegmentPaths []string           `yaml:"segment_paths,omitempty"`
 }
 
 // HeaderBypassConfig lets trusted automation skip DLP with a shared secret.
 type HeaderBypassConfig struct {
 	Name  string `yaml:"name"`
-	Token string `yaml:"token"`
+	Token string `yaml:"token,omitempty"`
 }
 
 // Default returns a Config populated with safe defaults.

@@ -44,3 +44,6 @@ Thumbs.db
 
 # local build/test scratch
 .gotmp/
+
+# Local Docker test fixtures
+.gotmp/

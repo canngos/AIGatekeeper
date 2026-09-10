@@ -5,9 +5,9 @@ Self-hosted, open-source TLS-intercepting proxy that inspects GenAI traffic from
 prompts for secrets and PII, blocks violations before they leave your network, and records a
 structured audit trail. No third-party SaaS, one static binary, Apache-2.0.
 
-> Status: phases 1 to 6 of the [implementation plan](AIGatekeeper.md) are complete (proxy, parsers,
-> DLP engine, policy and block responses, hot reload, containerisation). The web admin UI and
-> identity/alerting are in progress.
+> Status: phases 1 to 7 of the [implementation plan](AIGatekeeper.md) are complete (proxy, parsers,
+> DLP engine, policy and block responses, hot reload, containerisation, web console). Per-user
+> attribution and alerting are next.
 
 ## How it works
 
@@ -117,19 +117,55 @@ One JSON object per line, for example:
 Other kinds: `tunnel`, `passthrough`, `tls_error`, `proxy_start`, `config_reload`. Counters are
 exposed at `GET /metrics` on the admin listener (expvar JSON).
 
+## Web console
+
+The admin listener serves a console at `http://127.0.0.1:9090/` with five views:
+
+- **Overview** shows what proportion of traffic was forwarded, flagged and stopped over a chosen
+  window, requests over time, and which rules, detectors, services and workstations were involved.
+- **Traffic** streams inspected requests live, or searches the recorded history. Each row expands to
+  show what was found, where in the prompt, and the masked match.
+- **Policy** edits services, rules and exceptions as forms, or the file directly with the comments
+  intact. Check validates without saving; Apply writes the file and the proxy reloads in place.
+- **Tester** runs a prompt or a captured request body through the live policy, or through a
+  candidate configuration, without contacting a provider.
+- **Status** reports the loaded policy, listeners, reload history and audit sink health.
+
+The console and its API stay closed until a credential exists:
+
+```sh
+aigatekeeper admin hash-password        # prompts, prints a bcrypt hash
+# then set admin.auth.password_hash in the config, or AIGK_ADMIN_PASSWORD_HASH
+```
+
+Sessions use an HttpOnly cookie with double-submit CSRF; `admin.auth.token` enables a bearer token
+for scripting. Set `audit.sqlite.enabled: true` to record the searchable history the Overview and
+Traffic history views read; without it the live feed and the API still work.
+
+The console is embedded in the binary, so the container needs no Node at runtime. A binary built
+without it (`make build-noui`) serves a short page explaining how to build it, and the API is
+unaffected.
+
 ## Admin listener
 
-`/healthz`, `/readyz`, `/ca.crt`, `POST /-/reload`, `/-/policy` (secret-free summary), `/metrics`.
-It binds to 127.0.0.1 by default; keep it off the workstation network.
+Operational endpoints: `/healthz`, `/readyz`, `/ca.crt`, `POST /-/reload`, `/-/policy` (secret-free
+summary), `/metrics`. JSON API under `/api/v1/`. It binds to 127.0.0.1 by default; on any other
+address set `admin.tls_cert` and `admin.tls_key`, and keep it off the workstation network.
 
 ## Development
 
 ```sh
 make test          # go test ./... -race (needs cgo)
 make test-docker   # same, inside golang:1.27 (Windows hosts with Smart App Control, no cgo)
-make build-noui    # static binary
-make docker        # container image
+make test-ui       # frontend tests (vitest)
+make build-noui    # static binary without the console
+make build         # console + binary with the console embedded
+make docker        # container image (builds the console in its own stage)
 ```
+
+For the console, `cd web && npm run dev` serves it on port 5173 and proxies the API to a gatekeeper
+running on 9090, so cookies stay same-origin. Add `http://localhost:5173` to `admin.cors_origins`
+only if you run the two on different origins.
 
 ## Security notes
 

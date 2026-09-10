@@ -9,15 +9,44 @@ permissions:
   contents: read
 
 jobs:
+  web:
+    name: Console type-check, test, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+        working-directory: web
+      - run: npx tsc --noEmit
+        working-directory: web
+      - run: npm test
+        working-directory: web
+      - run: npm run build
+        working-directory: web
+      - uses: actions/upload-artifact@v4
+        with:
+          name: console
+          path: web/dist
+
   go:
     name: Go vet, test, build
     runs-on: ubuntu-latest
+    needs: web
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
+      # The binary embeds the console, so it must exist before `go build`.
+      - uses: actions/download-artifact@v4
+        with:
+          name: console
+          path: web/dist
       - name: gofmt
         run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
       - name: vet
@@ -61,12 +90,14 @@ jobs:
           load: true
           tags: aigatekeeper:ci
           build-args: VERSION=${{ github.sha }}
-      - name: container starts and reports healthy
+      - name: container starts, serves the console and reports healthy
         run: |
           mkdir -p certs
           docker run --rm -v "$PWD/certs:/certs" aigatekeeper:ci ca init --out /certs
           cid=$(docker run -d -v "$PWD/certs:/certs" -p 18080:8080 -p 19090:9090 aigatekeeper:ci)
           for i in $(seq 1 20); do curl -fsS http://127.0.0.1:19090/healthz && break; sleep 1; done
           curl -fsS http://127.0.0.1:19090/readyz
+          curl -fsS http://127.0.0.1:19090/ | grep -q '<div id="root">'
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:19090/api/v1/status)" = 503
           docker logs "$cid"
           docker rm -f "$cid"

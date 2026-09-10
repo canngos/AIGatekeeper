@@ -4,7 +4,7 @@ bin
 certs
 data
 web/node_modules
-web/dist
+# web/dist is produced by the ui build stage, never copied from the host
 web/coverage
 *.md
 !README.md

@@ -317,6 +317,50 @@ func TestConfigApplyFromFormDocument(t *testing.T) {
 	if !h.manager.Store().Load().Monitor {
 		t.Fatal("monitor mode not applied")
 	}
+
+	// The file an operator reads and diffs must stay in schema order and
+	// must not spell out every empty default. Marshalling the form's
+	// generic document directly would sort keys alphabetically instead.
+	written, err := os.ReadFile(h.cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(written)
+	if !strings.HasPrefix(text, "version:") {
+		t.Errorf("applied file should start with version, got:\n%s", text)
+	}
+	if strings.Index(text, "\nservices:") > strings.Index(text, "\nrules:") {
+		t.Error("applied file should keep services before rules (schema order, not alphabetical)")
+	}
+	for _, clutter := range []string{"passthrough_paths: []", "options: {}", "regex: []", `upstream_proxy: ""`} {
+		if strings.Contains(text, clutter) {
+			t.Errorf("applied file should omit empty defaults, found %q in:\n%s", clutter, text)
+		}
+	}
+	// Booleans that default to true must still be written explicitly, or
+	// omitting a false would read back as true on the next load.
+	if !strings.Contains(text, "tunnel_unmatched:") {
+		t.Error("tunnel_unmatched must always be written explicitly")
+	}
+}
+
+func TestApplyRoundTripPreservesFalseDefaults(t *testing.T) {
+	h := newAPIHarness(t, true, false)
+	h.login(t)
+	_, cfg := h.do(t, http.MethodGet, "/api/v1/config", nil, nil)
+	doc := cfg["config"].(map[string]any)
+	// Turning off a setting whose default is true must survive the round trip.
+	doc["tunnel_unmatched"] = false
+	doc["audit"] = map[string]any{"stdout": false, "log_allowed": false, "include_preview": false}
+
+	resp, _ := h.do(t, http.MethodPost, "/api/v1/config/apply", map[string]any{"config": doc, "base_version": cfg["version"]}, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("apply: %d", resp.StatusCode)
+	}
+	loaded := h.manager.Current().Config
+	if loaded.TunnelUnmatched || loaded.Audit.Stdout || loaded.Audit.LogAllowed || loaded.Audit.IncludePreview {
+		t.Fatalf("false values were lost in the round trip: %+v", loaded.Audit)
+	}
 }
 
 func TestTesterEndpoint(t *testing.T) {

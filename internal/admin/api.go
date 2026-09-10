@@ -148,16 +148,26 @@ type configRequest struct {
 	BaseVersion string         `json:"base_version"`
 }
 
-// rawFrom returns the YAML to validate/apply: the raw text, or the form
-// document serialised by the server so serialisation rules live in Go only.
+// rawFrom returns the YAML to validate or apply. Raw text is used as typed.
+// A form document is normalised through the schema first: marshalling the
+// generic map directly would sort keys alphabetically and spell out every
+// empty default, which makes the file operators read and diff much worse.
 func (req configRequest) rawFrom() ([]byte, error) {
 	if req.YAML != "" {
 		return []byte(req.YAML), nil
 	}
-	if req.Config != nil {
-		return yaml.Marshal(req.Config)
+	if req.Config == nil {
+		return nil, errors.New("provide either yaml or config")
 	}
-	return nil, errors.New("provide either yaml or config")
+	intermediate, err := yaml.Marshal(req.Config)
+	if err != nil {
+		return nil, err
+	}
+	cfg, err := config.Parse(intermediate)
+	if err != nil {
+		return nil, err // may be a *config.ValidationError; handlers report its problems
+	}
+	return config.Marshal(cfg)
 }
 
 func (s *Server) handleValidateConfig(w http.ResponseWriter, r *http.Request) {
@@ -171,6 +181,10 @@ func (s *Server) handleValidateConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	raw, err := req.rawFrom()
 	if err != nil {
+		if isValidationError(err) {
+			writeJSON(w, http.StatusOK, map[string]any{"ok": false, "errors": problems(err), "yaml": ""})
+			return
+		}
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 		return
 	}
@@ -194,6 +208,10 @@ func (s *Server) handleApplyConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	raw, err := req.rawFrom()
 	if err != nil {
+		if isValidationError(err) {
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": "configuration is invalid", "errors": problems(err)})
+			return
+		}
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 		return
 	}
@@ -220,6 +238,11 @@ func problems(err error) []config.Problem {
 		return ve.Problems
 	}
 	return []config.Problem{{Path: "", Message: err.Error()}}
+}
+
+func isValidationError(err error) bool {
+	var ve *config.ValidationError
+	return errors.As(err, &ve)
 }
 
 // configToDoc renders the effective configuration (defaults applied) as a

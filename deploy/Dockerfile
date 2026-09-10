@@ -3,6 +3,17 @@
 # Build from the repository root:  docker build -f deploy/Dockerfile -t aigatekeeper .
 
 ARG GO_VERSION=1.27
+ARG NODE_VERSION=24
+
+# The admin UI is built here and embedded into the binary by the Go stage,
+# so the image needs no Node at runtime and the repository needs no
+# committed build output.
+FROM node:${NODE_VERSION}-alpine AS ui
+WORKDIR /web
+COPY web/package.json web/package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci
+COPY web/ ./
+RUN npm run build
 
 FROM golang:${GO_VERSION}-alpine AS build
 ARG VERSION=dev
@@ -11,6 +22,7 @@ RUN apk add --no-cache git
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY . .
+COPY --from=ui /web/dist ./web/dist
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" \
