@@ -5,7 +5,7 @@ version: 1
 
 listen:
   forward: "0.0.0.0:8080"        # HTTP proxy: CONNECT for HTTPS, absolute-URI for plain HTTP
-  admin: "127.0.0.1:9090"        # health, CA download, and (later) the admin API/UI
+  admin: "127.0.0.1:9090"        # health, CA download, admin API and web UI
   reverse: []                    # reverse listeners for local model servers, e.g.
   # - { name: ollama, listen: "127.0.0.1:11434", upstream: "http://127.0.0.1:11435", service: ollama }
 
@@ -41,11 +41,29 @@ audit:
   file: ""
   include_preview: true          # masked preview of matched values, e.g. AKIA****Q7
   log_allowed: true
-  sqlite:
-    enabled: false               # history store for the admin UI (Phase 7)
+  sqlite:                        # searchable history behind the admin UI (stdout logging is unaffected)
+    enabled: false
     path: ../data/audit.db
-    max_age: 720h
-    max_rows: 1000000
+    max_age: 720h                # delete events older than this
+    max_rows: 1000000            # and keep at most this many
+    batch_size: 256
+    batch_interval: 200ms
+    sweep_interval: 1h
+    queue: 8192
+
+admin:
+  ui: true                       # serve the embedded web UI on the admin listener
+  auth:
+    # The admin API and UI stay disabled until one of these is set.
+    # Generate a hash with: aigatekeeper admin hash-password
+    password_hash: ""            # bcrypt; or set AIGK_ADMIN_PASSWORD_HASH
+    token: ""                    # bearer token for scripting; or set AIGK_ADMIN_TOKEN
+    session_ttl: 12h
+    login_burst: 5               # login attempts allowed per client IP before throttling
+    login_per_minute: 5
+  tls_cert: ""                   # required if the admin listener is not on loopback
+  tls_key: ""
+  cors_origins: []               # e.g. ["http://localhost:5173"] for `npm run dev`
 
 tunnel_unmatched: true           # hosts not listed below are tunnelled untouched (never decrypted)
 default_action: block

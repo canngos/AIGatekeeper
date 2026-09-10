@@ -110,13 +110,17 @@ type AuditConfig struct {
 	SQLite         AuditSQLiteConfig `yaml:"sqlite"`
 }
 
-// AuditSQLiteConfig configures the embedded history store.
+// AuditSQLiteConfig configures the embedded history store that backs the
+// admin UI. Stdout logging is independent of this.
 type AuditSQLiteConfig struct {
 	Enabled       bool     `yaml:"enabled"`
 	Path          string   `yaml:"path"`
 	MaxAge        Duration `yaml:"max_age"`
 	MaxRows       int64    `yaml:"max_rows"`
+	BatchSize     int      `yaml:"batch_size"`
 	BatchInterval Duration `yaml:"batch_interval"`
+	SweepInterval Duration `yaml:"sweep_interval"`
+	Queue         int      `yaml:"queue"`
 }
 
 // AdminConfig configures the admin API / UI listener.
@@ -125,14 +129,22 @@ type AdminConfig struct {
 	TLSCert     string          `yaml:"tls_cert"`
 	TLSKey      string          `yaml:"tls_key"`
 	CORSOrigins []string        `yaml:"cors_origins"`
+	UI          bool            `yaml:"ui"`
 }
 
-// AdminAuthConfig holds the single admin credential.
+// AdminAuthConfig holds the single admin credential. Generate the hash with
+// `aigatekeeper admin hash-password`; either field may come from the
+// environment instead (AIGK_ADMIN_PASSWORD_HASH, AIGK_ADMIN_TOKEN).
 type AdminAuthConfig struct {
-	PasswordHash string   `yaml:"password_hash"`
-	Token        string   `yaml:"token"`
-	SessionTTL   Duration `yaml:"session_ttl"`
+	PasswordHash   string   `yaml:"password_hash"`
+	Token          string   `yaml:"token"`
+	SessionTTL     Duration `yaml:"session_ttl"`
+	LoginBurst     int      `yaml:"login_burst"`
+	LoginPerMinute int      `yaml:"login_per_minute"`
 }
+
+// Configured reports whether an admin credential is set.
+func (a AdminAuthConfig) Configured() bool { return a.PasswordHash != "" || a.Token != "" }
 
 // ServiceConfig describes one intercepted GenAI service.
 type ServiceConfig struct {
@@ -219,11 +231,15 @@ func Default() *Config {
 				Path:          "./data/audit.db",
 				MaxAge:        Duration(720 * time.Hour),
 				MaxRows:       1_000_000,
+				BatchSize:     256,
 				BatchInterval: Duration(200 * time.Millisecond),
+				SweepInterval: Duration(time.Hour),
+				Queue:         8192,
 			},
 		},
 		Admin: AdminConfig{
-			Auth: AdminAuthConfig{SessionTTL: Duration(12 * time.Hour)},
+			UI:   true,
+			Auth: AdminAuthConfig{SessionTTL: Duration(12 * time.Hour), LoginBurst: 5, LoginPerMinute: 5},
 		},
 		TunnelUnmatched: true,
 		DefaultAction:   ActionBlock,
@@ -312,6 +328,18 @@ func (c *Config) Validate() error {
 	}
 	if !isOneOf(c.DefaultAction, ActionBlock, ActionMonitor, ActionAllow) {
 		ve.add("default_action", "must be block, monitor or allow")
+	}
+	if c.Audit.SQLite.Enabled && c.Audit.SQLite.Path == "" {
+		ve.add("audit.sqlite.path", "is required when the history store is enabled")
+	}
+	if h := c.Admin.Auth.PasswordHash; h != "" && !strings.HasPrefix(h, "$2") {
+		ve.add("admin.auth.password_hash", "must be a bcrypt hash; generate one with `aigatekeeper admin hash-password`")
+	}
+	if t := c.Admin.Auth.Token; t != "" && len(t) < 16 {
+		ve.add("admin.auth.token", "must be at least 16 characters")
+	}
+	if (c.Admin.TLSCert == "") != (c.Admin.TLSKey == "") {
+		ve.add("admin.tls_cert", "tls_cert and tls_key must be set together")
 	}
 
 	serviceNames := map[string]bool{}

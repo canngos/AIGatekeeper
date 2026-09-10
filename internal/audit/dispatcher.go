@@ -114,9 +114,25 @@ func (d *Dispatcher) Log(e Event) {
 	}
 }
 
-// Subscribe returns a channel receiving every event from now on (dropping
-// when the subscriber is slow) and a cancel function. Used by the live feed.
-func (d *Dispatcher) Subscribe(buf int) (<-chan Event, func() int64) {
+// Subscription is a live feed of events. Events are dropped for a
+// subscriber that cannot keep up; Dropped reports how many, so the consumer
+// can tell the viewer their feed skipped entries.
+type Subscription struct {
+	C       <-chan Event
+	sub     *subscriber
+	cancel  func()
+	dropped func() int64
+}
+
+// Dropped returns the number of events skipped for this subscriber so far.
+func (s *Subscription) Dropped() int64 { return s.dropped() }
+
+// Close unsubscribes and closes the channel.
+func (s *Subscription) Close() { s.cancel() }
+
+// Subscribe returns a live feed of every event from now on. Call Close when
+// the consumer goes away.
+func (d *Dispatcher) Subscribe(buf int) *Subscription {
 	if buf <= 0 {
 		buf = 256
 	}
@@ -126,16 +142,29 @@ func (d *Dispatcher) Subscribe(buf int) (<-chan Event, func() int64) {
 	d.nextSub++
 	d.subs[id] = s
 	d.mu.Unlock()
-	cancel := func() int64 {
-		d.mu.Lock()
-		if _, ok := d.subs[id]; ok {
-			delete(d.subs, id)
-			close(s.ch)
-		}
-		d.mu.Unlock()
-		return s.dropped.Load()
+	var once sync.Once
+	return &Subscription{
+		C:   s.ch,
+		sub: s,
+		cancel: func() {
+			once.Do(func() {
+				d.mu.Lock()
+				if _, ok := d.subs[id]; ok {
+					delete(d.subs, id)
+					close(s.ch)
+				}
+				d.mu.Unlock()
+			})
+		},
+		dropped: func() int64 { return s.dropped.Load() },
 	}
-	return s.ch, cancel
+}
+
+// Subscribers reports how many live feeds are attached.
+func (d *Dispatcher) Subscribers() int {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return len(d.subs)
 }
 
 // Stats reports each sink's queue state.

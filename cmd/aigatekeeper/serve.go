@@ -23,6 +23,7 @@ import (
 	"github.com/canngos/aigatekeeper/internal/policy"
 	"github.com/canngos/aigatekeeper/internal/proxy"
 	"github.com/canngos/aigatekeeper/internal/reload"
+	"github.com/canngos/aigatekeeper/web"
 )
 
 func cmdServe(args []string, stdout, stderr io.Writer) int {
@@ -60,7 +61,7 @@ func serve(ctx context.Context, cfgPath string, stdout io.Writer, logger *slog.L
 		return err
 	}
 
-	dispatcher, err := buildAudit(bootCfg, stdout)
+	dispatcher, history, err := buildAudit(bootCfg, stdout, logger)
 	if err != nil {
 		return err
 	}
@@ -149,14 +150,40 @@ func serve(ctx context.Context, cfgPath string, stdout io.Writer, logger *slog.L
 		}
 		return changed, version, err
 	}
-	adminSrv := admin.New(admin.Options{
+	listeners := map[string]string{"forward": cfg.Listen.Forward, "admin": cfg.Listen.Admin}
+	for _, rc := range cfg.Listen.Reverse {
+		listeners["reverse/"+rc.Name] = rc.Listen
+	}
+	adminOpts := admin.Options{
 		CACertPEM:  rootCA.CertPEM(),
 		Version:    version,
 		Ready:      func() bool { return store.Load() != nil },
 		Reload:     reloadFn,
 		PolicyInfo: func() any { return policySummary(manager, dispatcher) },
-		Logger:     logger,
-	})
+		Auth: admin.AuthConfig{
+			PasswordHash:   cfg.Admin.Auth.PasswordHash,
+			Token:          cfg.Admin.Auth.Token,
+			SessionTTL:     cfg.Admin.Auth.SessionTTL.Std(),
+			LoginBurst:     cfg.Admin.Auth.LoginBurst,
+			LoginPerMinute: cfg.Admin.Auth.LoginPerMinute,
+		},
+		Manager:     manager,
+		History:     history,
+		Events:      dispatcher,
+		Listeners:   listeners,
+		CORSOrigins: cfg.Admin.CORSOrigins,
+		TLSCert:     cfg.ResolvePath(cfg.Admin.TLSCert),
+		TLSKey:      cfg.ResolvePath(cfg.Admin.TLSKey),
+		Logger:      logger,
+	}
+	if cfg.Admin.UI {
+		adminOpts.UI = web.FS()
+		adminOpts.UIBuilt = web.Built()
+	}
+	adminSrv := admin.New(adminOpts)
+	if !cfg.Admin.Auth.Configured() && cfg.Listen.Admin != "" {
+		logger.Warn("admin API and UI are disabled until a credential is set; run `aigatekeeper admin hash-password`")
+	}
 
 	logger.Info("root CA", "subject", rootCA.Cert.Subject.CommonName, "sha256", rootCA.Fingerprint())
 
@@ -208,7 +235,11 @@ func serve(ctx context.Context, cfgPath string, stdout io.Writer, logger *slog.L
 	return nil
 }
 
-func buildAudit(cfg *config.Config, stdout io.Writer) (*audit.Dispatcher, error) {
+// buildAudit wires the audit sinks. The stdout sink uses the blocking
+// overflow policy so the primary trail is never silently truncated;
+// optional sinks drop instead, and the drop counters are exposed at
+// /api/v1/status.
+func buildAudit(cfg *config.Config, stdout io.Writer, logger *slog.Logger) (*audit.Dispatcher, *audit.SQLiteStore, error) {
 	d := audit.NewDispatcher()
 	if cfg.Audit.Stdout {
 		d.Add("stdout", audit.NewJSONLogger(stdout), audit.SinkOptions{Queue: 1024, Overflow: audit.OverflowBlock})
@@ -216,11 +247,28 @@ func buildAudit(cfg *config.Config, stdout io.Writer) (*audit.Dispatcher, error)
 	if cfg.Audit.File != "" {
 		f, err := os.OpenFile(cfg.ResolvePath(cfg.Audit.File), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o640)
 		if err != nil {
-			return nil, fmt.Errorf("open audit file: %w", err)
+			return nil, nil, fmt.Errorf("open audit file: %w", err)
 		}
 		d.Add("file", audit.NewWriterSink(f), audit.SinkOptions{Queue: 4096, Overflow: audit.OverflowDrop})
 	}
-	return d, nil
+	var history *audit.SQLiteStore
+	if cfg.Audit.SQLite.Enabled {
+		sq := cfg.Audit.SQLite
+		store, err := audit.OpenSQLite(cfg.ResolvePath(sq.Path), audit.SQLiteOptions{
+			BatchSize:     sq.BatchSize,
+			FlushInterval: sq.BatchInterval.Std(),
+			MaxAge:        sq.MaxAge.Std(),
+			MaxRows:       sq.MaxRows,
+			SweepInterval: sq.SweepInterval.Std(),
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+		history = store
+		d.Add("sqlite", store, audit.SinkOptions{Queue: sq.Queue, Overflow: audit.OverflowDrop})
+		logger.Info("audit history store open", "path", cfg.ResolvePath(sq.Path), "max_age", sq.MaxAge, "max_rows", sq.MaxRows)
+	}
+	return d, history, nil
 }
 
 // policySummary is the secret-free view served at /-/policy.

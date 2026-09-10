@@ -32,6 +32,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return cmdServe(args[1:], stdout, stderr)
 	case "ca":
 		return cmdCA(args[1:], stdout, stderr)
+	case "admin":
+		return cmdAdmin(args[1:], stdout, stderr)
 	case "healthcheck":
 		return cmdHealthcheck(args[1:], stdout, stderr)
 	case "version", "--version", "-v":
@@ -54,6 +56,7 @@ Usage:
   aigatekeeper serve --config configs/aigatekeeper.yaml [--log-level info]
   aigatekeeper ca init [--out ./certs] [--cn NAME] [--org ORG] [--validity 3650d] [--force]
   aigatekeeper ca print [--cert ./certs/ca.crt]
+  aigatekeeper admin hash-password              (reads the password from stdin)
   aigatekeeper healthcheck [--url http://127.0.0.1:9090/healthz]
   aigatekeeper version
 `)

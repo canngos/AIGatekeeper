@@ -85,19 +85,26 @@ func TestDispatcherBlockPolicyDeliversEverything(t *testing.T) {
 
 func TestDispatcherSubscribe(t *testing.T) {
 	d := NewDispatcher()
-	ch, cancel := d.Subscribe(1)
+	sub := d.Subscribe(1)
+	if d.Subscribers() != 1 {
+		t.Fatalf("subscribers = %d", d.Subscribers())
+	}
 	d.Log(Event{Kind: KindRequest, RequestID: "1"})
 	d.Log(Event{Kind: KindRequest, RequestID: "2"}) // dropped: buffer of 1 is full
-	if e := <-ch; e.RequestID != "1" {
+	if e := <-sub.C; e.RequestID != "1" {
 		t.Fatalf("got %+v", e)
 	}
-	if dropped := cancel(); dropped != 1 {
+	if dropped := sub.Dropped(); dropped != 1 {
 		t.Fatalf("expected 1 dropped for slow subscriber, got %d", dropped)
 	}
-	if _, ok := <-ch; ok {
-		t.Fatal("channel should be closed after cancel")
+	sub.Close()
+	if _, ok := <-sub.C; ok {
+		t.Fatal("channel should be closed after Close")
 	}
-	cancel() // idempotent
+	sub.Close() // idempotent
+	if d.Subscribers() != 0 {
+		t.Fatalf("subscribers after close = %d", d.Subscribers())
+	}
 	_ = d.Close(time.Second)
 }
 
