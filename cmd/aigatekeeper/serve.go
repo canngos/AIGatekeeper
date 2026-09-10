@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -57,6 +58,7 @@ func serve(ctx context.Context, cfgPath string, stdout io.Writer, logger *slog.L
 	if err != nil {
 		return err
 	}
+	cfg.SetBaseDir(filepath.Dir(cfgPath))
 	pol, err := policy.Compile(cfg, config.Hash(raw))
 	if err != nil {
 		return err
@@ -104,6 +106,7 @@ func serve(ctx context.Context, cfgPath string, stdout io.Writer, logger *slog.L
 			MaxDecodedBytes: cfg.Limits.MaxDecodedBytes.Int64(),
 		}),
 		proxy.Parse(parser.Default()),
+		proxy.Enforce(store),
 	)
 
 	forward := proxy.New(proxy.Options{

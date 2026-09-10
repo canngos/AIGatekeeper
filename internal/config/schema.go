@@ -44,6 +44,8 @@ type Config struct {
 	Services  []ServiceConfig `yaml:"services"`
 	Rules     []RuleConfig    `yaml:"rules"`
 	Allowlist AllowlistConfig `yaml:"allowlist"`
+
+	baseDir string
 }
 
 // ListenConfig holds listener addresses.

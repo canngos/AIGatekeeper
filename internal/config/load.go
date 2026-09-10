@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -16,13 +17,34 @@ import (
 const EnvPrefix = "AIGK_"
 
 // Load reads, parses, applies environment overrides to, and validates the
-// configuration file at path.
+// configuration file at path. Relative paths inside the file resolve
+// against the file's directory.
 func Load(path string) (*Config, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read config: %w", err)
 	}
-	return Parse(raw)
+	cfg, err := Parse(raw)
+	if err != nil {
+		return nil, err
+	}
+	cfg.SetBaseDir(filepath.Dir(path))
+	return cfg, nil
+}
+
+// SetBaseDir sets the directory relative paths are resolved against.
+func (c *Config) SetBaseDir(dir string) { c.baseDir = dir }
+
+// BaseDir returns the directory relative paths are resolved against.
+func (c *Config) BaseDir() string { return c.baseDir }
+
+// ResolvePath makes a configured path absolute relative to the config file
+// directory (or the working directory when no base is set).
+func (c *Config) ResolvePath(p string) string {
+	if p == "" || filepath.IsAbs(p) || c.baseDir == "" {
+		return p
+	}
+	return filepath.Join(c.baseDir, p)
 }
 
 // Parse parses YAML bytes on top of defaults, applies environment overrides,
