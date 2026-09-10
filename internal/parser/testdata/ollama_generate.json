@@ -1,0 +1,1 @@
+{"model":"codellama:7b","prompt":"def fibonacci(n):","suffix":"    return result","system":"Complete code only.","stream":false,"images":["iVBORw0KGgoAAAANSUhEUg=="]}

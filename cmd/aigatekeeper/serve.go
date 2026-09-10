@@ -17,6 +17,7 @@ import (
 	"github.com/canngos/aigatekeeper/internal/audit"
 	"github.com/canngos/aigatekeeper/internal/ca"
 	"github.com/canngos/aigatekeeper/internal/config"
+	"github.com/canngos/aigatekeeper/internal/parser"
 	"github.com/canngos/aigatekeeper/internal/policy"
 	"github.com/canngos/aigatekeeper/internal/proxy"
 )
@@ -97,6 +98,12 @@ func serve(ctx context.Context, cfgPath string, stdout io.Writer, logger *slog.L
 	forwarder := proxy.NewForwarder(transport, logger)
 	inspect := proxy.Chain(forwarder,
 		proxy.Audited(auditLog, cfg.Audit.LogAllowed),
+		proxy.Route(store),
+		proxy.ReadBody(proxy.BodyLimits{
+			MaxBodyBytes:    cfg.Limits.MaxBodyBytes.Int64(),
+			MaxDecodedBytes: cfg.Limits.MaxDecodedBytes.Int64(),
+		}),
+		proxy.Parse(parser.Default()),
 	)
 
 	forward := proxy.New(proxy.Options{

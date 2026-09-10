@@ -1,0 +1,1 @@
+{"model":"gpt-4o","stream":true,"messages":[{"role":"system","content":"You are a helpful coding assistant."},{"role":"user","content":"Why does this fail?\naws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"},{"role":"assistant","content":"It looks like a credentials issue."},{"role":"user","content":"Explain more."}]}

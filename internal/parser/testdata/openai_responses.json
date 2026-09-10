@@ -1,0 +1,1 @@
+{"model":"gpt-4.1","instructions":"Answer briefly.","stream":false,"input":[{"role":"user","content":[{"type":"input_text","text":"Summarise the incident report"},{"type":"input_image","image_url":"https://example.com/a.png"}]},{"type":"function_call_output","call_id":"c1","output":"db password is hunter2"}]}

@@ -1,0 +1,1 @@
+{"query":"find the config","context":{"files":[{"name":"settings.py","content":"SECRET_KEY = 'django-insecure-abc'"}],"a/b~c":"escaped key"},"count":3,"flags":[true,null],"model":"custom-1","stream":true}

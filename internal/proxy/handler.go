@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/canngos/aigatekeeper/internal/audit"
+	"github.com/canngos/aigatekeeper/internal/parser"
 	"github.com/canngos/aigatekeeper/internal/policy"
 )
 
@@ -38,14 +39,17 @@ type Transaction struct {
 	Encoding string
 	Oversize bool
 
-	Service   *policy.Service
-	Action    string
-	BlockMode string
-	Reason    string
-	Rule      string
-	Findings  []audit.FindingSummary
-	Model     string
-	Stream    bool
+	Service     *policy.Service
+	Passthrough bool // service matched but the path is exempt from inspection
+	Extraction  *parser.Extraction
+	ParseErr    error
+	Action      string
+	BlockMode   string
+	Reason      string
+	Rule        string
+	Findings    []audit.FindingSummary
+	Model       string
+	Stream      bool
 
 	UpstreamStatus int
 	BytesOut       int64

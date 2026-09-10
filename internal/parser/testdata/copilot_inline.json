@@ -1,0 +1,1 @@
+{"prompt":"# Path: main.py\nimport os\nAWS_KEY = \"AKIAIOSFODNN7EXAMPLE\"\ndef connect():\n    ","suffix":"\n    return client\n","max_tokens":500,"temperature":0,"top_p":1,"n":1,"stop":["\n\n"],"nwo":"acme/repo","stream":true,"extra":{"language":"python","next_indent":4,"trim_by_indentation":true}}
