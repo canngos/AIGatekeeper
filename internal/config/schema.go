@@ -159,13 +159,22 @@ func (a AdminAuthConfig) Configured() bool { return a.PasswordHash != "" || a.To
 
 // ServiceConfig describes one intercepted GenAI service.
 type ServiceConfig struct {
-	Name             string   `yaml:"name"`
+	Name string `yaml:"name"`
+	// Enabled turns inspection of this destination off without deleting the
+	// configuration for it. A pointer so that an absent field means enabled:
+	// a plain bool would write nothing for false and read back as true.
+	Enabled          *bool    `yaml:"enabled,omitempty"`
 	Hosts            []string `yaml:"hosts,omitempty"`
 	Extractor        string   `yaml:"extractor,omitempty"`
 	BlockMode        string   `yaml:"block_mode,omitempty"`
 	PassthroughPaths []string `yaml:"passthrough_paths,omitempty"`
 	Rules            []string `yaml:"rules,omitempty"`
 }
+
+// IsEnabled reports whether the destination is inspected. A service with no
+// enabled field is inspected, so adding the field never changes an existing
+// configuration.
+func (s ServiceConfig) IsEnabled() bool { return s.Enabled == nil || *s.Enabled }
 
 // RuleConfig groups detectors with a severity and an action.
 type RuleConfig struct {

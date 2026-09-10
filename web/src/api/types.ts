@@ -158,6 +158,9 @@ export interface Problem {
 // the form editor touches are typed; everything else is preserved as-is.
 export interface ServiceConfig {
   name: string;
+  /** Absent means inspected. False turns inspection off without deleting
+      the destination's configuration. */
+  enabled?: boolean;
   hosts: string[];
   extractor: string;
   block_mode: "reject" | "synthetic";

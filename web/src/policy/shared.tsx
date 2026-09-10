@@ -51,29 +51,49 @@ export function Row({
   onToggle,
   title,
   facts,
+  controls,
+  muted,
   children,
 }: {
   open: boolean;
   onToggle: () => void;
   title: ReactNode;
   facts: ReactNode;
+  /** Row-level controls, rendered outside the disclosure button so they can
+      be operated without opening the row. */
+  controls?: ReactNode;
+  muted?: boolean;
   children: ReactNode;
 }) {
   return (
-    <div className="border-b last:border-b-0" style={{ borderColor: "var(--rule)" }}>
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={open}
-        className="flex w-full items-center gap-3 px-3 py-2 text-left"
-        style={{ background: open ? "var(--surface-sunken)" : "transparent" }}
-      >
-        <span aria-hidden className="text-[10px]" style={{ color: "var(--ink-faint)" }}>
-          {open ? "▼" : "▶"}
-        </span>
-        <span className="w-40 shrink-0 truncate text-[13px] font-semibold">{title}</span>
-        <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 text-[12px]">{facts}</span>
-      </button>
+    // A named group, so a control inside it is announced against the thing
+    // it acts on rather than as one of several identical checkboxes.
+    <div
+      role="group"
+      aria-label={typeof title === "string" ? title : undefined}
+      className="border-b last:border-b-0"
+      style={{ borderColor: "var(--rule)" }}
+    >
+      <div className="flex items-center gap-2 pr-3" style={{ background: open ? "var(--surface-sunken)" : "transparent" }}>
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={open}
+          className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2 text-left"
+        >
+          <span aria-hidden className="text-[10px]" style={{ color: "var(--ink-faint)" }}>
+            {open ? "▼" : "▶"}
+          </span>
+          <span
+            className="w-40 shrink-0 truncate text-[13px] font-semibold"
+            style={muted ? { color: "var(--ink-faint)" } : undefined}
+          >
+            {title}
+          </span>
+          <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 text-[12px]">{facts}</span>
+        </button>
+        {controls}
+      </div>
       {open && <div className="border-t px-3 py-3" style={{ borderColor: "var(--rule)" }}>{children}</div>}
     </div>
   );

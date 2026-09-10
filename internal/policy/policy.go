@@ -17,6 +17,7 @@ import (
 // Service is a compiled config.ServiceConfig.
 type Service struct {
 	Name             string
+	Enabled          bool
 	Hosts            []*regexp.Regexp
 	Extractor        string
 	BlockMode        string
@@ -190,7 +191,7 @@ func Compile(cfg *config.Config, hash string) (*Policy, error) {
 	}
 
 	for _, sc := range cfg.Services {
-		s := &Service{Name: sc.Name, Extractor: sc.Extractor, BlockMode: sc.BlockMode}
+		s := &Service{Name: sc.Name, Enabled: sc.IsEnabled(), Extractor: sc.Extractor, BlockMode: sc.BlockMode}
 		for _, h := range sc.Hosts {
 			re, err := regexp.Compile(h)
 			if err != nil {
@@ -291,19 +292,29 @@ func compileRule(cfg *config.Config, rc config.RuleConfig, opts dlp.Options) (*R
 }
 
 // ServiceForHost returns the first service whose host patterns match, or nil.
+// A disabled service is compiled but never matched, so its destination is
+// treated as one nobody listed: tunnelled untouched, or refused when
+// tunnel_unmatched is off. It stays in the policy by name so a reverse
+// listener still resolves and the console can still show it.
 func (p *Policy) ServiceForHost(host string) *Service {
 	host = strings.ToLower(strings.TrimSuffix(host, "."))
 	for _, s := range p.Services {
-		if s.MatchesHost(host) {
+		if s.Enabled && s.MatchesHost(host) {
 			return s
 		}
 	}
 	return nil
 }
 
-// ServiceForListener returns the service bound to a reverse listener, or nil.
+// ServiceForListener returns the service bound to a reverse listener, or nil
+// when there is none or it is disabled. A nil service means the request is
+// forwarded without being parsed or enforced.
 func (p *Policy) ServiceForListener(name string) *Service {
-	return p.byListener[name]
+	s := p.byListener[name]
+	if s == nil || !s.Enabled {
+		return nil
+	}
+	return s
 }
 
 // ServiceByName returns the named service, or nil.

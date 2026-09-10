@@ -106,7 +106,9 @@ Python and .NET's `HttpClient` do not hard-fail on unknown revocation status by 
 `configs/aigatekeeper.yaml` is documented inline. The important knobs:
 
 - `services`: host regexes, which extractor parses the body, `block_mode` (`reject` or `synthetic`),
-  `passthrough_paths` that are never inspected, and the `rules` to apply.
+  `passthrough_paths` that are never inspected, and the `rules` to apply. `enabled: false` stops a
+  destination being inspected without deleting it, so its traffic is tunnelled like any host nobody
+  listed; the console has a switch for it. A service with no `enabled` field is inspected.
 - `rules`: built-in `detectors` (cloud access key IDs, AWS secret keys, GitHub, Slack, Google,
   OpenAI and Anthropic keys, JWT, private keys, high-entropy secrets, credit cards, email, US SSN,
   IBAN), plus `keywords` files and custom `regex` patterns, each with a `severity` and an `action`

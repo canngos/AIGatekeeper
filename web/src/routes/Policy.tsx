@@ -252,7 +252,8 @@ function ModeSwitch({ mode, onChange, disabled }: { mode: Mode; onChange: (m: Mo
  */
 function Enforcement({ draft, setDraft }: { draft: ConfigDoc; setDraft: (d: ConfigDoc) => void }) {
   const monitor = Boolean(draft.mode?.monitor);
-  const services = (draft.services ?? []).length;
+  const services = draft.services ?? [];
+  const active = services.filter((s) => s.enabled !== false).length;
   const rules = draft.rules ?? [];
   const stopping = rules.filter((r) => (r.action ?? draft.default_action) === "block").length;
 
@@ -284,7 +285,14 @@ function Enforcement({ draft, setDraft }: { draft: ConfigDoc; setDraft: (d: Conf
         <dl className="flex gap-6 text-[12.5px]">
           <div>
             <dt style={{ color: "var(--ink-faint)" }}>Inspected</dt>
-            <dd className="text-[15px] font-semibold">{services}</dd>
+            <dd className="text-[15px] font-semibold">
+              {active}
+              {active < services.length && (
+                <span className="ml-1.5 text-[12px] font-normal" style={{ color: "var(--monitor)" }}>
+                  {services.length - active} off
+                </span>
+              )}
+            </dd>
           </div>
           <div>
             <dt style={{ color: "var(--ink-faint)" }}>Rules</dt>

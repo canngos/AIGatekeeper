@@ -20,11 +20,14 @@ export function Services({
   const [open, setOpen] = useState<number | null>(null);
   const services = draft.services ?? [];
   const ruleIds = (draft.rules ?? []).map((r) => r.id);
+  // What happens to a destination that is switched off depends on what the
+  // proxy does with a host nobody listed.
+  const tunnels = draft.tunnel_unmatched !== false;
 
   return (
     <Section
       title="What gets inspected"
-      description="Each destination listed here is decrypted and its prompts are read. Anything not listed is tunnelled through untouched, so this list is the whole of what the proxy can see."
+      description="Each active destination is decrypted and its prompts are read. Anything not listed, or switched off here, is tunnelled through untouched. Switch one off to stop inspecting it while keeping its configuration."
       action={
         <Button
           onClick={() =>
@@ -42,20 +45,48 @@ export function Services({
       }
     >
       {services.length === 0 && <Empty title="Nothing is inspected yet">Add a destination to start reading prompts sent to it.</Empty>}
-      {services.map((svc, i) => (
+      {services.map((svc, i) => {
+        const active = svc.enabled !== false;
+        return (
         <Row
           key={i}
           open={open === i}
           onToggle={() => setOpen(open === i ? null : i)}
           title={svc.name || "Unnamed"}
+          muted={!active}
+          controls={
+            <label className="flex shrink-0 items-center gap-1.5 text-[12.5px]">
+              <input
+                type="checkbox"
+                checked={active}
+                onChange={(e) =>
+                  update(draft, setDraft, (d) => {
+                    // Absent means active, so switching back on removes the
+                    // line rather than writing enabled: true everywhere.
+                    if (e.target.checked) delete d.services[i].enabled;
+                    else d.services[i].enabled = false;
+                  })
+                }
+              />
+              Active
+            </label>
+          }
           facts={
-            <>
-              <Fact mono>{summariseHosts(svc.hosts)}</Fact>
-              <Fact>{BLOCK_MODE_LABEL[svc.block_mode] ?? svc.block_mode}</Fact>
-              <Fact tone={(svc.rules ?? []).length === 0 ? "var(--monitor)" : undefined}>
-                {(svc.rules ?? []).length === 0 ? "no rules applied" : (svc.rules ?? []).join(", ")}
+            active ? (
+              <>
+                <Fact mono>{summariseHosts(svc.hosts)}</Fact>
+                <Fact>{BLOCK_MODE_LABEL[svc.block_mode] ?? svc.block_mode}</Fact>
+                <Fact tone={(svc.rules ?? []).length === 0 ? "var(--monitor)" : undefined}>
+                  {(svc.rules ?? []).length === 0 ? "no rules applied" : (svc.rules ?? []).join(", ")}
+                </Fact>
+              </>
+            ) : (
+              <Fact tone="var(--monitor)">
+                {tunnels
+                  ? "Not inspected. Prompts sent here pass through unread."
+                  : "Not inspected, and refused: unlisted destinations are not allowed."}
               </Fact>
-            </>
+            )
           }
         >
           <div className="grid gap-3 md:grid-cols-2">
@@ -140,7 +171,8 @@ export function Services({
             </Button>
           </div>
         </Row>
-      ))}
+        );
+      })}
     </Section>
   );
 }

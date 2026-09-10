@@ -74,6 +74,7 @@ const config: ConfigResponse = {
     default_action: "block",
     services: [
       { name: "copilot", hosts: ["^api\\.githubcopilot\\.com$", "^.*\\.githubcopilot\\.com$"], extractor: "copilot", block_mode: "synthetic", rules: ["secrets"] },
+      { name: "openai", hosts: ["^api\.openai\.com$"], extractor: "openai", block_mode: "reject", rules: ["secrets"] },
     ],
     rules: [{ id: "secrets", severity: "critical", action: "block", detectors: ["access_keys"] }],
   },
@@ -196,6 +197,69 @@ describe("Policy", () => {
 
     expect(screen.getByLabelText("Prefix 1")).toHaveValue("AKIA");
     expect(screen.getByText(/Defaults. Editing makes a copy you own./)).toBeInTheDocument();
+  });
+
+  it("switches a destination off without removing it", async () => {
+    const user = userEvent.setup();
+    renderPolicy();
+    await screen.findByRole("region", { name: "What gets inspected" });
+    const row = within(screen.getByRole("group", { name: "openai" }));
+
+    expect(row.getByLabelText("Active")).toBeChecked();
+    expect(screen.getByText("2")).toBeInTheDocument(); // both inspected
+
+    await user.click(row.getByLabelText("Active"));
+
+    expect(row.getByLabelText("Active")).not.toBeChecked();
+    expect(row.getByText(/Not inspected. Prompts sent here pass through unread./)).toBeInTheDocument();
+    expect(screen.getByText("1 off")).toBeInTheDocument();
+    // The destination is still listed, with everything it needs to come back.
+    expect(screen.getByRole("group", { name: "openai" })).toBeInTheDocument();
+
+    const applied = vi.spyOn(api, "applyConfig").mockResolvedValue({ applied: true, version: "v2", loaded_at: new Date().toISOString() });
+    await user.click(screen.getByRole("button", { name: "Apply changes" }));
+    await waitFor(() => expect(applied).toHaveBeenCalled());
+    const sent = applied.mock.calls[0][0] as { config: { services: { name: string; enabled?: boolean; hosts: string[] }[] } };
+    expect(sent.config.services[1]).toMatchObject({ name: "openai", enabled: false, hosts: ["^api\.openai\.com$"] });
+    expect(sent.config.services[0].enabled).toBeUndefined();
+  });
+
+  it("warns that a switched-off destination is refused when unlisted hosts are not allowed", async () => {
+    vi.spyOn(api, "config").mockResolvedValue({
+      ...config,
+      config: { ...config.config, tunnel_unmatched: false },
+    });
+    const user = userEvent.setup();
+    renderPolicy();
+    await screen.findByRole("region", { name: "What gets inspected" });
+    const row = within(screen.getByRole("group", { name: "openai" }));
+
+    await user.click(row.getByLabelText("Active"));
+
+    expect(row.getByText(/refused: unlisted destinations are not allowed/)).toBeInTheDocument();
+  });
+
+  it("switching a destination back on removes the line rather than writing enabled: true", async () => {
+    vi.spyOn(api, "config").mockResolvedValue({
+      ...config,
+      config: {
+        ...config.config,
+        services: [{ ...config.config.services[0] }, { ...config.config.services[1], enabled: false }],
+      },
+    });
+    const user = userEvent.setup();
+    renderPolicy();
+    await screen.findByRole("region", { name: "What gets inspected" });
+    const row = within(screen.getByRole("group", { name: "openai" }));
+    expect(row.getByLabelText("Active")).not.toBeChecked();
+
+    await user.click(row.getByLabelText("Active"));
+
+    const applied = vi.spyOn(api, "applyConfig").mockResolvedValue({ applied: true, version: "v2", loaded_at: new Date().toISOString() });
+    await user.click(screen.getByRole("button", { name: "Apply changes" }));
+    await waitFor(() => expect(applied).toHaveBeenCalled());
+    const sent = applied.mock.calls[0][0] as { config: { services: { enabled?: boolean }[] } };
+    expect("enabled" in sent.config.services[1]).toBe(false);
   });
 
   it("switching to the file view keeps comments when nothing was edited", async () => {
