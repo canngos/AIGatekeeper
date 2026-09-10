@@ -1,4 +1,6 @@
 import type {
+  AlertTestResult,
+  AlertsResponse,
   ConfigResponse,
   DetectorInfo,
   EventsPage,
@@ -7,6 +9,7 @@ import type {
   Summary,
   TestResponse,
   Timeseries,
+  UsersResponse,
   ValidateResponse,
 } from "./types";
 
@@ -141,6 +144,14 @@ export const api = {
     limit?: number;
   }) => request<EventsPage>(`/api/v1/events${query(params)}`),
   event: (id: number) => request<Record<string, unknown>>(`/api/v1/events/${id}`),
+
+  users: (range: string) => request<UsersResponse>(`/api/v1/users${query({ range })}`),
+  alerts: (params: { status?: string; rule?: string; user?: string; cursor?: string }) =>
+    request<AlertsResponse>(`/api/v1/alerts${query(params)}`),
+  acknowledgeAlert: (id: number) =>
+    request<{ acknowledged: boolean }>(`/api/v1/alerts/${id}/acknowledge`, { method: "POST" }),
+  testAlert: (payload: { rule?: string; to?: string[] }) =>
+    request<{ rule: string; results: AlertTestResult[] }>("/api/v1/alerts/test", { method: "POST", body: payload }),
 
   summary: (range: string) => request<Summary>(`/api/v1/stats/summary${query({ range })}`),
   timeseries: (range: string, group: string) => request<Timeseries>(`/api/v1/stats/timeseries${query({ range, group })}`),

@@ -128,6 +128,28 @@ func ApplyEnv(cfg *Config, lookup func(string) (string, bool)) error {
 	str("ADMIN_PASSWORD_HASH", &cfg.Admin.Auth.PasswordHash)
 	str("ADMIN_TOKEN", &cfg.Admin.Auth.Token)
 	str("UPSTREAM_PROXY", &cfg.TLS.UpstreamProxy)
+	str("SMTP_PASSWORD", &cfg.Alerts.Email.Password)
+	str("LDAP_BIND_PASSWORD", &cfg.Identity.ProxyAuth.LDAP.BindPassword)
+
+	// Secrets may also name an environment variable to read, which keeps
+	// them out of the file the admin console rewrites.
+	if v := cfg.Identity.ProxyAuth.LDAP.BindPasswordEnv; v != "" {
+		if secret, ok := lookup(v); ok {
+			cfg.Identity.ProxyAuth.LDAP.BindPassword = secret
+		}
+	}
+	if v := cfg.Alerts.Email.PasswordEnv; v != "" {
+		if secret, ok := lookup(v); ok {
+			cfg.Alerts.Email.Password = secret
+		}
+	}
+	for i := range cfg.Alerts.Webhooks {
+		if v := cfg.Alerts.Webhooks[i].SecretEnv; v != "" {
+			if secret, ok := lookup(v); ok {
+				cfg.Alerts.Webhooks[i].Secret = secret
+			}
+		}
+	}
 	for _, f := range []func() error{
 		func() error { return boolean("MODE_MONITOR", &cfg.Mode.Monitor) },
 		func() error { return boolean("TUNNEL_UNMATCHED", &cfg.TunnelUnmatched) },

@@ -105,6 +105,14 @@ export interface Status {
   };
   audit_sinks?: { name: string; queued: number; dropped: number; written: number }[];
   history_store?: { written: number; errors: number; last_error: string };
+  open_alerts?: number;
+  identity?: {
+    proxy_auth: boolean;
+    reverse_dns: boolean;
+    directory: boolean;
+    proxy_auth_stats?: Record<string, number>;
+  };
+  alerts?: { rules: number; raised: number; suppressed: number };
 }
 
 export interface DetectorInfo {
@@ -190,4 +198,76 @@ export interface TestResponse {
   decision: { action: Action; rule: string; reason: string; block_mode: string; detectors: string[] };
   service: string;
   warning?: string;
+}
+
+export interface UserSummary {
+  user?: string;
+  device?: string;
+  client_ip?: string;
+  requests: number;
+  blocked: number;
+  flagged: number;
+  last_seen: string;
+}
+
+export interface UsersResponse {
+  users: UserSummary[];
+  from: string;
+  to: string;
+  /** True when proxy authentication names people rather than machines. */
+  attributed: boolean;
+}
+
+export interface AlertEventSummary {
+  ts: string;
+  request_id: string;
+  service: string;
+  host: string;
+  path: string;
+  action: string;
+  rule: string;
+  detectors: string[];
+  previews: string[];
+}
+
+export interface AlertDetail {
+  events?: AlertEventSummary[];
+  detectors?: string[];
+  services?: string[];
+  notified?: string[];
+  notify_errors?: string[];
+  email?: string;
+  manager?: string;
+}
+
+export interface StoredAlert {
+  id: number;
+  ts: string;
+  rule_id: string;
+  group_key: string;
+  group_by: string;
+  user?: string;
+  device?: string;
+  client_ip?: string;
+  count: number;
+  window: string;
+  since: string;
+  severity: string;
+  status: "open" | "acknowledged";
+  acknowledged_by?: string;
+  acknowledged_at?: string;
+  detail?: AlertDetail;
+}
+
+export interface AlertsResponse {
+  items: StoredAlert[];
+  next_cursor?: string;
+  open: number;
+  rules: string[];
+}
+
+export interface AlertTestResult {
+  notifier: string;
+  recipients?: string[];
+  error?: string;
 }

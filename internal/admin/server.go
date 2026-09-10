@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/canngos/aigatekeeper/internal/alert"
 	"github.com/canngos/aigatekeeper/internal/audit"
 	"github.com/canngos/aigatekeeper/internal/dlp"
 	"github.com/canngos/aigatekeeper/internal/parser"
@@ -47,6 +48,10 @@ type Options struct {
 	Events    *audit.Dispatcher  // may be nil: stream endpoint answers 503
 	Detectors []dlp.Info
 	Parsers   parser.Registry
+	// Alerts is the running alert engine; nil when no rules are configured.
+	Alerts *alert.Engine
+	// Identity summarises which attribution sources are switched on.
+	Identity  map[string]any
 	Listeners map[string]string // name -> address, for the status page
 	UI        fs.FS
 	UIBuilt   bool
@@ -125,6 +130,10 @@ func New(opts Options) *Server {
 	api("GET /api/v1/events", s.handleEvents)
 	api("GET /api/v1/events/stream", s.handleEventStream)
 	api("GET /api/v1/events/{id}", s.handleEvent)
+	api("GET /api/v1/users", s.handleUsers)
+	api("GET /api/v1/alerts", s.handleAlerts)
+	api("POST /api/v1/alerts/test", s.handleTestAlert)
+	api("POST /api/v1/alerts/{id}/acknowledge", s.handleAcknowledgeAlert)
 	api("GET /api/v1/stats/summary", s.handleStatsSummary)
 	api("GET /api/v1/stats/timeseries", s.handleStatsTimeseries)
 	s.mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) {

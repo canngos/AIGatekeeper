@@ -5,9 +5,9 @@ Self-hosted, open-source TLS-intercepting proxy that inspects GenAI traffic from
 prompts for secrets and PII, blocks violations before they leave your network, and records a
 structured audit trail. No third-party SaaS, one static binary, Apache-2.0.
 
-> Status: phases 1 to 7 of the [implementation plan](AIGatekeeper.md) are complete (proxy, parsers,
-> DLP engine, policy and block responses, hot reload, containerisation, web console). Per-user
-> attribution and alerting are next.
+> Status: all eight phases of the [implementation plan](AIGatekeeper.md) are complete: proxy and TLS
+> interception, payload parsers, DLP engine, policy and block responses, hot reload, containerisation,
+> the web console, and per-user attribution with alerting.
 
 ## How it works
 
@@ -146,6 +146,47 @@ The console is embedded in the binary, so the container needs no Node at runtime
 without it (`make build-noui`) serves a short page explaining how to build it, and the API is
 unaffected.
 
+## Who sent it, and telling someone
+
+By default an event carries a client address, which names a workstation and changes with the DHCP
+lease. Two optional sources turn that into a person:
+
+- **Proxy authentication** (`identity.proxy_auth`) makes the proxy answer 407 until a workstation
+  sends credentials, checked against a bcrypt `htpasswd` file or an LDAP bind. Credentials ride on
+  the CONNECT request, so every request later decrypted inside that tunnel is attributed to the same
+  person, and the header never reaches the provider. VS Code sends them from
+  `"http.proxy": "http://alice@proxy:8080"` or `http.proxyAuthorization`.
+- **Reverse DNS** (`identity.reverse_dns`) names the workstation, cached and time-boxed. It is a
+  hint, not authentication.
+
+With `alerts.rules` configured, repeated violations by one person raise an alert:
+
+```yaml
+alerts:
+  email: { host: smtp.corp.local, from: aigatekeeper@corp.local, password_env: AIGK_SMTP_PASSWORD }
+  rules:
+    - id: repeat-offender
+      match: { actions: [block], min_severity: high }
+      group_by: user            # falls back to device, then address
+      threshold: 3
+      window: 24h
+      cooldown: 24h             # at most one message per person per day
+      notify:
+        - { type: email, to: [security@corp.local] }
+        - { type: email, to_manager: true }   # manager from identity.directory
+        - { type: webhook, name: soc }
+```
+
+The message lists the contributing requests with the same masked previews the audit log keeps; the
+matched value never leaves the proxy. A destination that fails does not stop the others, and the
+failure is recorded on the alert. The console's People view lists who is running into the policy and
+lets an analyst acknowledge an alert; Status has a button that sends a sample through the real relay.
+
+Emailing the person who triggered an alert (`to_user`) is off unless you switch it on. Automated mail
+to an employee about their own activity is employee monitoring, and in many places it needs
+works-council or privacy sign-off before you enable it. Running in `mode.monitor` while you tune the
+rules is the safer way to start.
+
 ## Admin listener
 
 Operational endpoints: `/healthz`, `/readyz`, `/ca.crt`, `POST /-/reload`, `/-/policy` (secret-free
@@ -170,9 +211,12 @@ only if you run the two on different origins.
 ## Security notes
 
 - `certs/ca.key` can impersonate any host for machines that trust the CA. Restrict access to it.
-- The forward listener should sit on a trusted network segment; it is not authenticated yet
-  (proxy authentication and per-user attribution arrive in Phase 8).
-- Findings are stored masked; enable `audit.include_preview: false` to drop previews entirely.
+- Proxy credentials travel as HTTP Basic between workstation and proxy, so the forward listener
+  belongs on a trusted network segment. Without `identity.proxy_auth` the listener is unauthenticated
+  and anyone who can reach it can use it.
+- Findings are stored masked; prompt text is never persisted.
+- The admin listener binds to loopback by default. On any other address set `admin.tls_cert` and
+  `admin.tls_key`, or put it behind a TLS terminator.
 
 ## License
 

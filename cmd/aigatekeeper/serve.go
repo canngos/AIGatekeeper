@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -15,9 +17,11 @@ import (
 	"time"
 
 	"github.com/canngos/aigatekeeper/internal/admin"
+	"github.com/canngos/aigatekeeper/internal/alert"
 	"github.com/canngos/aigatekeeper/internal/audit"
 	"github.com/canngos/aigatekeeper/internal/ca"
 	"github.com/canngos/aigatekeeper/internal/config"
+	"github.com/canngos/aigatekeeper/internal/identity"
 	"github.com/canngos/aigatekeeper/internal/metrics"
 	"github.com/canngos/aigatekeeper/internal/parser"
 	"github.com/canngos/aigatekeeper/internal/policy"
@@ -65,12 +69,28 @@ func serve(ctx context.Context, cfgPath string, stdout io.Writer, logger *slog.L
 	if err != nil {
 		return err
 	}
+	var alerts *alert.Engine
 	defer func() {
 		if err := dispatcher.Close(5 * time.Second); err != nil {
 			logger.Warn("audit shutdown", "error", err)
 		}
 	}()
 	auditLog := metrics.Counting(dispatcher)
+
+	ids, err := buildIdentity(bootCfg, logger)
+	if err != nil {
+		return err
+	}
+	defer ids.Close()
+
+	if engine, err := buildAlerts(bootCfg, history, ids.Directory, logger); err != nil {
+		return err
+	} else if engine != nil {
+		alerts = engine
+		// The engine is an audit sink, so alerts are raised from the same
+		// stream the console reads and never block the proxy.
+		dispatcher.Add("alerts", engine, audit.SinkOptions{Queue: 2048, Overflow: audit.OverflowDrop})
+	}
 
 	store := policy.NewStore(nil)
 	manager := reload.NewManager(cfgPath, store, auditLog, logger)
@@ -129,6 +149,8 @@ func serve(ctx context.Context, cfgPath string, stdout io.Writer, logger *slog.L
 		Inspect:         inspect,
 		Transport:       transport,
 		AdvertiseHTTP2:  cfg.TLS.AdvertiseHTTP2,
+		Identify:        identifyFunc(ids),
+		AuthRealm:       cfg.Identity.ProxyAuth.Realm,
 		Audit:           auditLog,
 		Logger:          logger,
 	})
@@ -139,6 +161,7 @@ func serve(ctx context.Context, cfgPath string, stdout io.Writer, logger *slog.L
 		if err != nil {
 			return err
 		}
+		rl.Identify = identifyFunc(ids)
 		reverses = append(reverses, rl)
 	}
 
@@ -169,6 +192,8 @@ func serve(ctx context.Context, cfgPath string, stdout io.Writer, logger *slog.L
 		},
 		Manager:     manager,
 		History:     history,
+		Alerts:      alerts,
+		Identity:    identityStatus(ids),
 		Events:      dispatcher,
 		Listeners:   listeners,
 		CORSOrigins: cfg.Admin.CORSOrigins,
@@ -321,4 +346,34 @@ func parseLevel(s string) (slog.Level, error) {
 	default:
 		return 0, fmt.Errorf("invalid --log-level %q", s)
 	}
+}
+
+// identifyFunc adapts the identity stack for the proxy, or returns nil when
+// identity is switched off so the proxy skips the step entirely.
+func identifyFunc(ids *identityStack) func(*http.Request, net.IP) (identity.Identity, bool) {
+	if ids == nil || len(ids.Chain) == 0 {
+		return nil
+	}
+	return ids.Identify
+}
+
+// identityStatus is the secret-free summary shown on the Status page.
+func identityStatus(ids *identityStack) map[string]any {
+	out := map[string]any{"proxy_auth": false, "reverse_dns": false, "directory": false}
+	if ids == nil {
+		return out
+	}
+	out["directory"] = ids.Directory != nil
+	for _, r := range ids.Chain {
+		switch r.Name() {
+		case "proxy_auth":
+			out["proxy_auth"] = true
+		case "reverse_dns":
+			out["reverse_dns"] = true
+		}
+	}
+	if ids.ProxyAuth != nil {
+		out["proxy_auth_stats"] = ids.ProxyAuth.Stats()
+	}
+	return out
 }

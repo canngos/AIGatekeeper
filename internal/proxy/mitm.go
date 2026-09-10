@@ -12,11 +12,12 @@ import (
 	"golang.org/x/net/http2"
 
 	"github.com/canngos/aigatekeeper/internal/audit"
+	"github.com/canngos/aigatekeeper/internal/identity"
 )
 
 // mitm terminates TLS on the client connection with a certificate for host
 // and serves the decrypted HTTP requests through the Inspect handler.
-func (s *Server) mitm(client net.Conn, host, port string) {
+func (s *Server) mitm(client net.Conn, host, port string, id identity.Identity) {
 	cfg := &tls.Config{
 		MinVersion:     tls.VersionTLS12,
 		GetCertificate: s.opts.Certs.GetCertificate(host),
@@ -44,7 +45,9 @@ func (s *Server) mitm(client net.Conn, host, port string) {
 		authority = net.JoinHostPort(host, port)
 	}
 	handler := &mitmHandler{authority: authority, inspect: s.opts.Inspect}
-	baseCtx := WithListener(context.Background(), ListenerForward)
+	// The caller authenticated on CONNECT; everything inside this tunnel
+	// is theirs.
+	baseCtx := identity.WithIdentity(WithListener(context.Background(), ListenerForward), id)
 
 	if tlsConn.ConnectionState().NegotiatedProtocol == http2.NextProtoTLS {
 		h2 := &http2.Server{IdleTimeout: 2 * time.Minute}

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/canngos/aigatekeeper/internal/audit"
+	"github.com/canngos/aigatekeeper/internal/identity"
 	"github.com/canngos/aigatekeeper/internal/parser"
 	"github.com/canngos/aigatekeeper/internal/policy"
 )
@@ -39,6 +40,7 @@ type Transaction struct {
 	Encoding string
 	Oversize bool
 
+	Identity    identity.Identity
 	Service     *policy.Service
 	Passthrough bool // service matched but the path is exempt from inspection
 	Extraction  *parser.Extraction
@@ -120,6 +122,10 @@ func Audited(logger audit.Logger, logAllowed bool) Middleware {
 			if tx.Host == "" {
 				tx.Host = r.Host
 			}
+			// For an intercepted tunnel the caller authenticated once on
+			// CONNECT, so the identity arrives on the connection context
+			// rather than on this request's headers.
+			tx.Identity = identity.FromContext(r.Context())
 			w.Header().Set(RequestIDHeader, tx.ID)
 			rec := &responseRecorder{ResponseWriter: w}
 			ctx := WithTransaction(r.Context(), tx)
@@ -147,6 +153,9 @@ func (tx *Transaction) Event() audit.Event {
 		Kind:           audit.KindRequest,
 		RequestID:      tx.ID,
 		ClientIP:       clientIP(tx.ClientAddr),
+		User:           tx.Identity.User,
+		Device:         tx.Identity.Device,
+		UserSource:     tx.Identity.Source,
 		Listener:       tx.Listener,
 		Method:         tx.Method,
 		Host:           tx.Host,

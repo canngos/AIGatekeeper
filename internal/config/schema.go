@@ -45,6 +45,9 @@ type Config struct {
 	Rules     []RuleConfig    `yaml:"rules,omitempty"`
 	Allowlist AllowlistConfig `yaml:"allowlist,omitempty"`
 
+	Identity IdentityConfig `yaml:"identity,omitempty"`
+	Alerts   AlertsConfig   `yaml:"alerts,omitempty"`
+
 	baseDir string
 }
 
@@ -196,6 +199,120 @@ type AllowlistConfig struct {
 type HeaderBypassConfig struct {
 	Name  string `yaml:"name"`
 	Token string `yaml:"token,omitempty"`
+}
+
+// IdentityConfig configures who a request is attributed to. Everything
+// here is optional; with it all off, events carry a client address only.
+type IdentityConfig struct {
+	ProxyAuth  ProxyAuthConfig  `yaml:"proxy_auth,omitempty"`
+	ReverseDNS ReverseDNSConfig `yaml:"reverse_dns,omitempty"`
+	Directory  DirectoryConfig  `yaml:"directory,omitempty"`
+}
+
+// ProxyAuthConfig makes the proxy ask workstations for credentials, which
+// is the only way to attribute a prompt to a person rather than a machine.
+type ProxyAuthConfig struct {
+	Enabled     bool         `yaml:"enabled,omitempty"`
+	Realm       string       `yaml:"realm,omitempty"`
+	Backend     string       `yaml:"backend,omitempty"` // htpasswd | ldap
+	Htpasswd    HtpasswdConf `yaml:"htpasswd,omitempty"`
+	LDAP        LDAPConf     `yaml:"ldap,omitempty"`
+	ExemptCIDRs []string     `yaml:"exempt_cidrs,omitempty"`
+	CacheTTL    Duration     `yaml:"cache_ttl,omitempty"`
+}
+
+// HtpasswdConf points at a bcrypt htpasswd-style user file.
+type HtpasswdConf struct {
+	File string `yaml:"file,omitempty"`
+}
+
+// LDAPConf points at a directory server for authentication and lookups.
+type LDAPConf struct {
+	URL             string   `yaml:"url,omitempty"`
+	BindDN          string   `yaml:"bind_dn,omitempty"`
+	BindPassword    string   `yaml:"bind_password,omitempty"`
+	BindPasswordEnv string   `yaml:"bind_password_env,omitempty"`
+	BaseDN          string   `yaml:"base_dn,omitempty"`
+	UserFilter      string   `yaml:"user_filter,omitempty"`
+	MailAttr        string   `yaml:"mail_attr,omitempty"`
+	ManagerAttr     string   `yaml:"manager_attr,omitempty"`
+	StartTLS        bool     `yaml:"start_tls,omitempty"`
+	Insecure        bool     `yaml:"insecure,omitempty"`
+	Timeout         Duration `yaml:"timeout,omitempty"`
+}
+
+// ReverseDNSConfig names the workstation behind a client address.
+type ReverseDNSConfig struct {
+	Enabled  bool     `yaml:"enabled,omitempty"`
+	CacheTTL Duration `yaml:"cache_ttl,omitempty"`
+	Timeout  Duration `yaml:"timeout,omitempty"`
+}
+
+// DirectoryConfig supplies contact details for notifications.
+type DirectoryConfig struct {
+	CSV  string `yaml:"csv,omitempty"`
+	LDAP bool   `yaml:"ldap,omitempty"` // reuse the proxy_auth LDAP settings
+}
+
+// AlertsConfig configures repeat-violation alerting.
+type AlertsConfig struct {
+	Email     AlertEmailConfig `yaml:"email,omitempty"`
+	Webhooks  []WebhookConfig  `yaml:"webhooks,omitempty"`
+	Templates []string         `yaml:"templates,omitempty"`
+	Rules     []AlertRule      `yaml:"rules,omitempty"`
+}
+
+// AlertEmailConfig points at an SMTP relay.
+type AlertEmailConfig struct {
+	Host        string   `yaml:"host,omitempty"`
+	Port        int      `yaml:"port,omitempty"`
+	TLS         string   `yaml:"tls,omitempty"` // starttls | tls | none
+	Username    string   `yaml:"username,omitempty"`
+	Password    string   `yaml:"password,omitempty"`
+	PasswordEnv string   `yaml:"password_env,omitempty"`
+	From        string   `yaml:"from,omitempty"`
+	Timeout     Duration `yaml:"timeout,omitempty"`
+}
+
+// WebhookConfig is one named webhook destination.
+type WebhookConfig struct {
+	Name      string   `yaml:"name"`
+	URL       string   `yaml:"url,omitempty"`
+	Secret    string   `yaml:"secret,omitempty"`
+	SecretEnv string   `yaml:"secret_env,omitempty"`
+	Timeout   Duration `yaml:"timeout,omitempty"`
+}
+
+// AlertRule raises an alert when one source repeats violations.
+type AlertRule struct {
+	ID        string       `yaml:"id"`
+	Match     AlertMatch   `yaml:"match,omitempty"`
+	GroupBy   string       `yaml:"group_by,omitempty"` // user | device | client_ip
+	Threshold int          `yaml:"threshold,omitempty"`
+	Window    Duration     `yaml:"window,omitempty"`
+	Cooldown  Duration     `yaml:"cooldown,omitempty"`
+	Notify    []NotifyRule `yaml:"notify,omitempty"`
+	Template  string       `yaml:"template,omitempty"`
+}
+
+// AlertMatch selects which events an alert rule counts.
+type AlertMatch struct {
+	Actions     []string `yaml:"actions,omitempty"`
+	MinSeverity string   `yaml:"min_severity,omitempty"`
+	Services    []string `yaml:"services,omitempty"`
+	Rules       []string `yaml:"rules,omitempty"`
+	Detectors   []string `yaml:"detectors,omitempty"`
+}
+
+// NotifyRule names one destination for an alert. Telling the person
+// themselves is off unless explicitly enabled: automated mail to an
+// employee is employee monitoring and usually needs sign-off.
+type NotifyRule struct {
+	Type      string   `yaml:"type"` // email | webhook
+	To        []string `yaml:"to,omitempty"`
+	ToManager bool     `yaml:"to_manager,omitempty"`
+	ToUser    bool     `yaml:"to_user,omitempty"`
+	Name      string   `yaml:"name,omitempty"` // webhook name
 }
 
 // Default returns a Config populated with safe defaults.
@@ -426,6 +543,106 @@ func (c *Config) Validate() error {
 		} else if !serviceNames[r.Service] {
 			ve.add(p+".service", "unknown service %q", r.Service)
 		}
+	}
+
+	if pa := c.Identity.ProxyAuth; pa.Enabled {
+		if !isOneOf(pa.Backend, "htpasswd", "ldap") {
+			ve.add("identity.proxy_auth.backend", "must be htpasswd or ldap")
+		}
+		if pa.Backend == "htpasswd" && pa.Htpasswd.File == "" {
+			ve.add("identity.proxy_auth.htpasswd.file", "is required when the backend is htpasswd")
+		}
+		if pa.Backend == "ldap" {
+			if pa.LDAP.URL == "" {
+				ve.add("identity.proxy_auth.ldap.url", "is required when the backend is ldap")
+			} else if !strings.HasPrefix(pa.LDAP.URL, "ldap://") && !strings.HasPrefix(pa.LDAP.URL, "ldaps://") {
+				ve.add("identity.proxy_auth.ldap.url", "must start with ldap:// or ldaps://")
+			}
+			if pa.LDAP.BaseDN == "" {
+				ve.add("identity.proxy_auth.ldap.base_dn", "is required when the backend is ldap")
+			}
+			if f := pa.LDAP.UserFilter; f != "" && !strings.Contains(f, "{user}") {
+				ve.add("identity.proxy_auth.ldap.user_filter", "must contain {user}")
+			}
+		}
+		for i, cidr := range pa.ExemptCIDRs {
+			if _, _, err := net.ParseCIDR(cidr); err != nil {
+				ve.add(fmt.Sprintf("identity.proxy_auth.exempt_cidrs[%d]", i), "invalid CIDR: %v", err)
+			}
+		}
+	}
+	if c.Identity.Directory.LDAP && !c.Identity.ProxyAuth.Enabled {
+		ve.add("identity.directory.ldap", "needs identity.proxy_auth.ldap to be configured")
+	}
+
+	webhooks := map[string]bool{}
+	for i, w := range c.Alerts.Webhooks {
+		p := fmt.Sprintf("alerts.webhooks[%d]", i)
+		if w.Name == "" {
+			ve.add(p+".name", "is required")
+		} else if webhooks[w.Name] {
+			ve.add(p+".name", "duplicate webhook name %q", w.Name)
+		}
+		webhooks[w.Name] = true
+		if u, err := url.Parse(w.URL); err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+			ve.add(p+".url", "must be an http:// or https:// URL")
+		}
+	}
+	alertIDs := map[string]bool{}
+	for i, r := range c.Alerts.Rules {
+		p := fmt.Sprintf("alerts.rules[%d]", i)
+		if r.ID == "" {
+			ve.add(p+".id", "is required")
+		} else if alertIDs[r.ID] {
+			ve.add(p+".id", "duplicate alert rule id %q", r.ID)
+		}
+		alertIDs[r.ID] = true
+		if r.GroupBy != "" && !isOneOf(r.GroupBy, "user", "device", "client_ip") {
+			ve.add(p+".group_by", "must be user, device or client_ip")
+		}
+		if r.Threshold < 0 {
+			ve.add(p+".threshold", "must not be negative")
+		}
+		if r.Window.Std() < 0 || r.Cooldown.Std() < 0 {
+			ve.add(p+".window", "must not be negative")
+		}
+		if r.Match.MinSeverity != "" && !isOneOf(r.Match.MinSeverity, "low", "medium", "high", "critical") {
+			ve.add(p+".match.min_severity", "must be low, medium, high or critical")
+		}
+		for j, a := range r.Match.Actions {
+			if !isOneOf(a, ActionAllow, ActionBlock, ActionMonitor) {
+				ve.add(fmt.Sprintf("%s.match.actions[%d]", p, j), "must be allow, block or monitor")
+			}
+		}
+		for j, n := range r.Notify {
+			np := fmt.Sprintf("%s.notify[%d]", p, j)
+			switch n.Type {
+			case "email":
+				if len(n.To) == 0 && !n.ToManager && !n.ToUser {
+					ve.add(np, "an email target needs to, to_manager or to_user")
+				}
+				if c.Alerts.Email.Host == "" {
+					ve.add(np, "email targets need alerts.email.host to be set")
+				}
+				if (n.ToManager || n.ToUser) && c.Identity.Directory.CSV == "" && !c.Identity.Directory.LDAP {
+					ve.add(np, "to_manager and to_user need identity.directory to be configured")
+				}
+			case "webhook":
+				if n.Name == "" {
+					ve.add(np+".name", "is required for a webhook target")
+				} else if !webhooks[n.Name] {
+					ve.add(np+".name", "unknown webhook %q", n.Name)
+				}
+			default:
+				ve.add(np+".type", "must be email or webhook")
+			}
+		}
+		if len(r.Notify) == 0 {
+			ve.add(p+".notify", "an alert rule with no destination would never tell anyone")
+		}
+	}
+	if len(c.Alerts.Rules) > 0 && c.Alerts.Email.Host != "" && c.Alerts.Email.From == "" {
+		ve.add("alerts.email.from", "is required when email alerts are configured")
 	}
 
 	for i, pat := range c.Allowlist.Patterns {

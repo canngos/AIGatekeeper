@@ -5,6 +5,7 @@ import { SignIn } from "./auth/SignIn";
 import { Layout } from "./components/Layout";
 import { Overview } from "./routes/Overview";
 import { Traffic } from "./routes/Traffic";
+import { People } from "./routes/People";
 import { Policy } from "./routes/Policy";
 import { Tester } from "./routes/Tester";
 import { Status } from "./routes/Status";
@@ -31,6 +32,7 @@ function Gate() {
       <Route element={<Layout />}>
         <Route index element={<Overview />} />
         <Route path="traffic" element={<Traffic />} />
+        <Route path="people" element={<People />} />
         <Route path="policy" element={<Policy />} />
         <Route path="tester" element={<Tester />} />
         <Route path="status" element={<Status />} />

@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/canngos/aigatekeeper/internal/audit"
 	"github.com/canngos/aigatekeeper/internal/ca"
+	"github.com/canngos/aigatekeeper/internal/identity"
 	"github.com/canngos/aigatekeeper/internal/proxy"
 )
 
@@ -26,29 +28,39 @@ const testCACN = "AIGatekeeper Test CA"
 var quietLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
 
 type echoReply struct {
-	Method string `json:"method"`
-	Path   string `json:"path"`
-	Host   string `json:"host"`
-	Body   string `json:"body"`
-	Proto  string `json:"proto"`
+	Method  string   `json:"method"`
+	Path    string   `json:"path"`
+	Host    string   `json:"host"`
+	Body    string   `json:"body"`
+	Proto   string   `json:"proto"`
+	Headers []string `json:"headers,omitempty"`
 }
 
 func echoHandler(w http.ResponseWriter, r *http.Request) {
 	body, _ := io.ReadAll(r.Body)
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-Upstream", "echo")
-	_ = json.NewEncoder(w).Encode(echoReply{
-		Method: r.Method, Path: r.URL.Path, Host: r.Host, Body: string(body), Proto: r.Proto,
-	})
+	reply := echoReply{Method: r.Method, Path: r.URL.Path, Host: r.Host, Body: string(body), Proto: r.Proto}
+	if r.URL.Path == "/echo-headers" {
+		names := make([]string, 0, len(r.Header))
+		for k := range r.Header {
+			names = append(names, k)
+		}
+		reply.Headers = names
+	}
+	_ = json.NewEncoder(w).Encode(reply)
 }
 
 type harness struct {
-	t        *testing.T
-	ca       *ca.CA
-	cache    *ca.Cache
-	rec      *audit.Recorder
-	proxyURL *url.URL
-	cancel   context.CancelFunc
+	t         *testing.T
+	ca        *ca.CA
+	cache     *ca.Cache
+	rec       *audit.Recorder
+	proxyURL  *url.URL
+	cancel    context.CancelFunc
+	transport *http.Transport
+	intercept func(string) bool
+	tunnel    bool
 }
 
 func newHarness(t *testing.T, upstreamCerts []*x509.Certificate, intercept func(string) bool, tunnelUnmatched bool) *harness {
@@ -83,7 +95,49 @@ func newHarness(t *testing.T, upstreamCerts []*x509.Certificate, intercept func(
 	go func() { _ = srv.Serve(ctx, ln) }()
 	t.Cleanup(cancel)
 	pu, _ := url.Parse("http://" + ln.Addr().String())
-	return &harness{t: t, ca: rootCA, cache: cache, rec: rec, proxyURL: pu, cancel: cancel}
+	return &harness{
+		t: t, ca: rootCA, cache: cache, rec: rec, proxyURL: pu, cancel: cancel,
+		transport: transport, intercept: intercept, tunnel: tunnelUnmatched,
+	}
+}
+
+// restartWith replaces the running proxy with one that resolves identity,
+// keeping the same CA so already-issued clients still trust it.
+func (h *harness) restartWith(t *testing.T, identify func(*http.Request, net.IP) (identity.Identity, bool)) {
+	t.Helper()
+	h.cancel()
+	h.rec.Reset()
+	inspect := proxy.Chain(proxy.NewForwarder(h.transport, quietLogger), proxy.Audited(h.rec, true))
+	srv := proxy.New(proxy.Options{
+		Certs:           h.cache,
+		Intercept:       h.intercept,
+		TunnelUnmatched: func() bool { return h.tunnel },
+		Inspect:         inspect,
+		Transport:       h.transport,
+		Identify:        identify,
+		AuthRealm:       "Corp",
+		Audit:           h.rec,
+		Logger:          quietLogger,
+	})
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() { _ = srv.Serve(ctx, ln) }()
+	t.Cleanup(cancel)
+	h.cancel = cancel
+	h.proxyURL, _ = url.Parse("http://" + ln.Addr().String())
+}
+
+// clientWithAuth returns a client that presents proxy credentials.
+func (h *harness) clientWithAuth(root *x509.Certificate, user, password string) *http.Client {
+	c := h.client(root)
+	tr := c.Transport.(*http.Transport)
+	tr.ProxyConnectHeader = http.Header{
+		identity.ProxyAuthHeader: []string{"Basic " + base64.StdEncoding.EncodeToString([]byte(user+":"+password))},
+	}
+	return c
 }
 
 // client returns an HTTP client that uses the proxy and trusts the given roots.

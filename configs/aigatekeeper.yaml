@@ -131,6 +131,57 @@ rules:
     regex:
       - { id: project_codename, pattern: '(?i)\bproject[- ]?(falcon|orion)\b' }
 
+# Who a request is attributed to. All optional: with everything off, events
+# carry a client address only, which is enough for a pilot but not for
+# telling one developer from another on a shared subnet.
+identity:
+  proxy_auth:
+    # Makes the proxy ask workstations for credentials (HTTP 407), which is
+    # the only way to name a person rather than a machine. VS Code sends
+    # them from http.proxy (http://alice@proxy:8080) or http.proxyAuthorization.
+    enabled: false
+    realm: AIGatekeeper
+    backend: htpasswd            # htpasswd | ldap
+    htpasswd: { file: ./users.htpasswd }   # bcrypt lines "user:$2a$..."
+    ldap:
+      url: "ldaps://dc.corp.local:636"
+      bind_dn: ""                # service account used to find the user
+      bind_password_env: AIGK_LDAP_BIND_PASSWORD
+      base_dn: "OU=Users,DC=corp,DC=local"
+      user_filter: "(sAMAccountName={user})"
+      mail_attr: mail
+      manager_attr: manager
+    exempt_cidrs: []             # build agents and other automation
+    cache_ttl: 5m
+  reverse_dns: { enabled: true, cache_ttl: 10m, timeout: 500ms }
+  directory: { csv: "" }         # user,email,manager_email; or `ldap: true`
+
+# Tell someone when one person repeats violations. Nothing is sent unless a
+# rule is defined here. Matched values are always masked in the message.
+alerts:
+  email:
+    host: ""                     # e.g. smtp.corp.local
+    port: 587
+    tls: starttls                # starttls | tls | none
+    username: ""
+    password_env: AIGK_SMTP_PASSWORD
+    from: aigatekeeper@corp.local
+  webhooks: []
+  # - { name: soc, url: "https://hooks.example/services/...", secret_env: AIGK_WEBHOOK_SECRET }
+  rules: []
+  # - id: repeat-offender
+  #   match: { actions: [block], min_severity: high }
+  #   group_by: user             # user | device | client_ip; falls back down the list
+  #   threshold: 3
+  #   window: 24h
+  #   cooldown: 24h              # at most one message per person per day
+  #   notify:
+  #     - { type: email, to: [security@corp.local] }
+  #     - { type: email, to_manager: true }    # needs identity.directory
+  #     - { type: email, to_user: false }      # emailing the person is employee
+  #                                            # monitoring; check it is allowed first
+  #     - { type: webhook, name: soc }
+
 allowlist:
   values:                        # never flag these literal strings
     - AKIAIOSFODNN7EXAMPLE

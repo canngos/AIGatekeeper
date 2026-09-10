@@ -1,13 +1,33 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { Page } from "../components/Layout";
-import { Button, Notice, Panel, relativeTime } from "../components/primitives";
+import { Button, Notice, Panel, TextInput, relativeTime } from "../components/primitives";
 import { useState } from "react";
 
 export function Status() {
   const qc = useQueryClient();
   const status = useQuery({ queryKey: ["status"], queryFn: api.status, refetchInterval: 15_000 });
   const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
+  const [testTo, setTestTo] = useState("");
+  const [testing, setTesting] = useState(false);
+
+  async function sendTestAlert() {
+    setTesting(true);
+    setMessage(null);
+    try {
+      const res = await api.testAlert({ to: testTo ? testTo.split(",").map((s) => s.trim()) : undefined });
+      const failed = res.results.filter((r) => r.error);
+      setMessage(
+        failed.length === 0
+          ? { tone: "ok", text: `Test alert delivered through ${res.results.map((r) => r.notifier).join(", ")}.` }
+          : { tone: "error", text: failed.map((r) => `${r.notifier}: ${r.error}`).join("; ") },
+      );
+    } catch (err) {
+      setMessage({ tone: "error", text: err instanceof Error ? err.message : "The test failed" });
+    } finally {
+      setTesting(false);
+    }
+  }
 
   async function reload() {
     setMessage(null);
@@ -48,6 +68,26 @@ export function Status() {
             {s.reload.last_error}
           </Notice>
         )}
+        {(s?.alerts?.rules ?? 0) > 0 && (
+          <Panel title="Test the alert path">
+            <p className="mb-3 max-w-[70ch] text-[12.5px]" style={{ color: "var(--ink-muted)" }}>
+              Sends a sample alert through the configured destinations so you can confirm the relay works before
+              relying on it. Give an address to keep the test off your real distribution list.
+            </p>
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="min-w-[18rem] flex-1">
+                <label htmlFor="test-to" className="mb-1 block text-[12.5px] font-medium">
+                  Send to
+                </label>
+                <TextInput id="test-to" value={testTo} onChange={setTestTo} placeholder="you@corp.example" />
+              </div>
+              <Button onClick={() => void sendTestAlert()} disabled={testing}>
+                {testing ? "Sending" : "Send a test alert"}
+              </Button>
+            </div>
+          </Panel>
+        )}
+
         {s?.policy?.monitor && (
           <Notice tone="info">
             Monitor mode is on. Requests that would be stopped are recorded and forwarded anyway. Turn it off in the
@@ -79,6 +119,24 @@ export function Status() {
                 ["Monitor mode", s?.policy?.monitor ? "On" : "Off"],
                 ["File", s?.reload?.path],
                 ["Reloads", s?.reload ? `${s.reload.reloads} applied, ${s.reload.failures} rejected` : undefined],
+              ]}
+            />
+          </Panel>
+          <Panel title="Attribution" flush>
+            <Rows
+              rows={[
+                ["Developers sign in to the proxy", s?.identity?.proxy_auth ? "Yes" : "No"],
+                ["Workstation names resolved", s?.identity?.reverse_dns ? "Yes" : "No"],
+                ["User directory", s?.identity?.directory ? "Loaded" : "Not configured"],
+                [
+                  "Credentials checked",
+                  s?.identity?.proxy_auth_stats
+                    ? `${s.identity.proxy_auth_stats.successes ?? 0} accepted, ${s.identity.proxy_auth_stats.failures ?? 0} rejected`
+                    : undefined,
+                ],
+                ["Alert rules", s?.alerts ? String(s.alerts.rules) : "None"],
+                ["Alerts raised", s?.alerts ? `${s.alerts.raised} raised, ${s.alerts.suppressed} held by cooldown` : undefined],
+                ["Alerts waiting", s?.open_alerts !== undefined ? String(s.open_alerts) : undefined],
               ]}
             />
           </Panel>

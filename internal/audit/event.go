@@ -12,6 +12,7 @@ const (
 	KindTLSError     = "tls_error"     // the client rejected or failed our interception handshake
 	KindProxyStart   = "proxy_start"   // the proxy started listening
 	KindConfigReload = "config_reload" // the policy was (re)loaded
+	KindAuth         = "auth"          // a caller was challenged for proxy credentials
 )
 
 // Actions recorded on request events.

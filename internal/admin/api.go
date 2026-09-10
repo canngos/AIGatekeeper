@@ -75,7 +75,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 
 // ---- status & detectors ----
 
-func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	out := map[string]any{
 		"version":        s.opts.Version,
 		"uptime_seconds": int64(time.Since(s.started).Seconds()),
@@ -99,6 +99,16 @@ func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
 	if h := s.opts.History; h != nil {
 		written, errs, lastErr := h.Stats()
 		out["history_store"] = map[string]any{"written": written, "errors": errs, "last_error": lastErr}
+		if open, err := h.OpenAlerts(r.Context()); err == nil {
+			out["open_alerts"] = open
+		}
+	}
+	if s.opts.Identity != nil {
+		out["identity"] = s.opts.Identity
+	}
+	if s.opts.Alerts != nil {
+		raised, suppressed := s.opts.Alerts.Stats()
+		out["alerts"] = map[string]any{"rules": len(s.opts.Alerts.Rules()), "raised": raised, "suppressed": suppressed}
 	}
 	writeJSON(w, http.StatusOK, out)
 }

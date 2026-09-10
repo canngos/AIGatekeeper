@@ -5,6 +5,7 @@ import { Mark } from "../auth/SignIn";
 const NAV = [
   { to: "/", label: "Overview", end: true },
   { to: "/traffic", label: "Traffic" },
+  { to: "/people", label: "People" },
   { to: "/policy", label: "Policy" },
   { to: "/tester", label: "Tester" },
   { to: "/status", label: "Status" },

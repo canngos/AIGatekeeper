@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/canngos/aigatekeeper/internal/audit"
+	"github.com/canngos/aigatekeeper/internal/identity"
 )
 
 // ReverseListener fronts a local model server (for example Ollama on a
@@ -23,6 +24,8 @@ type ReverseListener struct {
 	Inspect  http.Handler
 	Audit    audit.Logger
 	Logger   *slog.Logger
+	// Identify names the caller; a reverse listener never challenges.
+	Identify func(r *http.Request, clientIP net.IP) (identity.Identity, bool)
 
 	srv *http.Server
 }
@@ -54,6 +57,13 @@ func NewReverseListener(name, upstream string, inspect http.Handler, logger *slo
 
 // ServeHTTP rewrites the request to the upstream and inspects it.
 func (rl *ReverseListener) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if rl.Identify != nil {
+		// Local model clients do not send proxy credentials, so an
+		// unidentified caller here is still served; only the device is filled in.
+		if id, _ := rl.Identify(r, net.ParseIP(clientIP(r.RemoteAddr))); id.Device != "" || id.User != "" {
+			r = r.WithContext(identity.WithIdentity(r.Context(), id))
+		}
+	}
 	r.URL.Scheme = rl.Upstream.Scheme
 	r.URL.Host = rl.Upstream.Host
 	r.Host = rl.Upstream.Host

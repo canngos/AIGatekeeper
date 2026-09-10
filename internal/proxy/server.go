@@ -15,6 +15,7 @@ import (
 
 	"github.com/canngos/aigatekeeper/internal/audit"
 	"github.com/canngos/aigatekeeper/internal/ca"
+	"github.com/canngos/aigatekeeper/internal/identity"
 )
 
 // Options configures the forward proxy server.
@@ -37,6 +38,12 @@ type Options struct {
 	Transport http.RoundTripper
 	// AdvertiseHTTP2 offers "h2" to intercepted clients via ALPN.
 	AdvertiseHTTP2 bool
+	// Identify resolves who sent a request. ok=false means the caller must
+	// be challenged for proxy credentials before anything is forwarded.
+	// A nil Identify means identity is switched off and everything passes.
+	Identify func(r *http.Request, clientIP net.IP) (identity.Identity, bool)
+	// AuthRealm names the realm offered in a 407 challenge.
+	AuthRealm string
 	// DialTimeout bounds tunnel dials.
 	DialTimeout time.Duration
 	// HandshakeTimeout bounds the client-facing TLS handshake.
@@ -155,9 +162,40 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// identify runs the identity chain, writing a 407 challenge when the
+// caller must authenticate first. It reports whether to continue.
+func (s *Server) identify(w http.ResponseWriter, r *http.Request) (identity.Identity, bool) {
+	if s.opts.Identify == nil {
+		return identity.Identity{}, true
+	}
+	id, ok := s.opts.Identify(r, net.ParseIP(clientIP(r.RemoteAddr)))
+	if ok {
+		return id, true
+	}
+	realm := s.opts.AuthRealm
+	if realm == "" {
+		realm = "AIGatekeeper"
+	}
+	w.Header().Set("Proxy-Authenticate", `Basic realm="`+realm+`", charset="UTF-8"`)
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusProxyAuthRequired)
+	_, _ = io.WriteString(w, "AIGatekeeper requires proxy credentials.\n")
+	s.opts.Audit.Log(audit.Event{
+		Time: time.Now(), Kind: audit.KindAuth, ClientIP: clientIP(r.RemoteAddr), Listener: ListenerFrom(r.Context()),
+		Method: r.Method, Host: r.Host, Action: audit.ActionBlock, Reason: "proxy_auth_required",
+	})
+	return identity.Identity{}, false
+}
+
 // handleAbsolute serves plain-HTTP requests sent through the proxy
 // (GET http://host/path). Intercepted hosts are inspected; others are relayed.
 func (s *Server) handleAbsolute(w http.ResponseWriter, r *http.Request) {
+	id, ok := s.identify(w, r)
+	if !ok {
+		return
+	}
+	r = r.WithContext(identity.WithIdentity(r.Context(), id))
+	r.Header.Del(identity.ProxyAuthHeader)
 	host := ca.NormalizeHost(r.URL.Hostname())
 	if s.opts.Intercept(host) && s.opts.Inspect != nil {
 		s.opts.Inspect.ServeHTTP(w, r)
@@ -188,6 +226,13 @@ func (s *Server) handleAbsolute(w http.ResponseWriter, r *http.Request) {
 // handleConnect establishes either an opaque tunnel or a TLS interception
 // session for CONNECT host:port.
 func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
+	// Credentials ride on the CONNECT request only; every request later
+	// decrypted inside the tunnel belongs to the same caller, so the
+	// identity is resolved once here and carried on the connection.
+	id, allowed := s.identify(w, r)
+	if !allowed {
+		return
+	}
 	host, port, err := splitHostPort(r.Host, "443")
 	if err != nil {
 		WriteJSONError(w, http.StatusBadRequest, "bad_connect_target", err.Error())
@@ -239,14 +284,14 @@ func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 	conn := &bufferedConn{Conn: clientConn, r: bufrw.Reader}
 
 	if intercept {
-		s.mitm(conn, host, port)
+		s.mitm(conn, host, port, id)
 		return
 	}
-	s.tunnel(conn, upstream, r.Host)
+	s.tunnel(conn, upstream, r.Host, id)
 }
 
 // tunnel copies bytes in both directions until either side closes.
-func (s *Server) tunnel(client, upstream net.Conn, target string) {
+func (s *Server) tunnel(client, upstream net.Conn, target string, id identity.Identity) {
 	start := time.Now()
 	var inBytes, outBytes int64
 	done := make(chan struct{}, 2)
@@ -275,16 +320,19 @@ func (s *Server) tunnel(client, upstream net.Conn, target string) {
 	upstream.Close()
 
 	s.opts.Audit.Log(audit.Event{
-		Time:      start,
-		Kind:      audit.KindTunnel,
-		ClientIP:  clientIP(client.RemoteAddr().String()),
-		Listener:  ListenerForward,
-		Method:    http.MethodConnect,
-		Host:      target,
-		Action:    audit.ActionAllow,
-		BytesIn:   inBytes,
-		BytesOut:  outBytes,
-		LatencyMS: time.Since(start).Milliseconds(),
+		Time:       start,
+		Kind:       audit.KindTunnel,
+		ClientIP:   clientIP(client.RemoteAddr().String()),
+		User:       id.User,
+		Device:     id.Device,
+		UserSource: id.Source,
+		Listener:   ListenerForward,
+		Method:     http.MethodConnect,
+		Host:       target,
+		Action:     audit.ActionAllow,
+		BytesIn:    inBytes,
+		BytesOut:   outBytes,
+		LatencyMS:  time.Since(start).Milliseconds(),
 	})
 }
 

@@ -126,7 +126,7 @@ func OpenSQLite(path string, opts SQLiteOptions) (*SQLiteStore, error) {
 	}
 	reader.SetMaxOpenConns(4)
 
-	if _, err := writer.Exec(schemaSQL); err != nil {
+	if _, err := writer.Exec(schemaSQL + alertSchemaSQL); err != nil {
 		writer.Close()
 		reader.Close()
 		return nil, fmt.Errorf("init audit schema: %w", err)
