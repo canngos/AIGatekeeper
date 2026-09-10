@@ -14,7 +14,12 @@ services:
       dockerfile: deploy/Dockerfile
     image: aigatekeeper:local
     container_name: aigatekeeper
-    restart: unless-stopped
+    # Deliberately not unless-stopped. A fatal misconfiguration, a missing
+    # CA above all, would then crash-loop forever while `docker compose ps`
+    # kept reporting "Up Less than a second (health: starting)", which reads
+    # as starting rather than failing. Giving up after three tries makes the
+    # container show as Exited, and `status.ps1` says why.
+    restart: on-failure:3
     ports:
       - "127.0.0.1:8080:8080" # proxy: point VS Code here
       - "127.0.0.1:9090:9090" # console: http://127.0.0.1:9090

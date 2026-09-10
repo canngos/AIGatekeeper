@@ -93,8 +93,11 @@ Write-Host "2. Trust it for Copilot, whose language server is a bundled Node"
 Write-Host "   runtime with its own certificate list (a normal shell is fine):"
 Write-Host "     setx NODE_EXTRA_CA_CERTS `"$abs`"" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "3. Start the proxy:"
+Write-Host "3. Start the proxy, and check it came up:"
 Write-Host "     docker compose up -d" -ForegroundColor Cyan
+Write-Host "     .\status.ps1" -ForegroundColor Cyan
+Write-Host "   status.ps1 waits for the health check and, if it never turns"
+Write-Host "   green, says which of the usual causes it was."
 Write-Host ""
 
 $step = 4

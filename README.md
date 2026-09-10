@@ -59,7 +59,12 @@ history.
 cd deploy\local
 .\setup.ps1                     # builds the image, makes the CA, sets a console password
 docker compose up -d
+.\status.ps1                    # waits for health, and says why if it never arrives
 ```
+
+`status.ps1` is the thing to run when it does not come up. A container that cannot read its CA, or
+cannot get its ports, reports itself as starting rather than failing, so the script checks the
+health state, the ports and the log and names the cause.
 
 `setup.ps1` prints the two commands that need an elevated shell (trusting the CA) and the VS Code
 settings to add. See "Reading your own Copilot chat" below.

@@ -30,7 +30,7 @@ admin:
   ui: true
   auth:
     # Written by setup.ps1. Change it with: aigatekeeper admin hash-password
-    password_hash: "$2a$10$hSBgYaOu0nKSQLbCDXbKJOf0qj0CQJYDtHt4iNTvod/Uz8Y3Jay.i"
+    password_hash: "$2a$10$elwncedQV0bW07tUlsO06e9mvsABg8Oqz6YFXH5ulfkeA3BtBOEQm"
 
 tunnel_unmatched: true         # anything not listed below is never decrypted
 
