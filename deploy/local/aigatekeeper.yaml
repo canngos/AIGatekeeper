@@ -13,7 +13,11 @@ ca:
   key: /certs/ca.key
 
 mode:
-  monitor: true                # watch first, block later
+  # false = actually block. Set this to true to watch without blocking:
+  # every violation is still detected and logged with action "monitor",
+  # but the request is forwarded. That is the right setting for a rollout,
+  # and the wrong one for testing that blocking works.
+  monitor: false
 
 audit:
   stdout: true

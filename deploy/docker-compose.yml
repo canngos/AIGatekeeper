@@ -11,7 +11,12 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile
     image: aigatekeeper:local
-    restart: unless-stopped
+    # Not unless-stopped: a fatal misconfiguration would crash-loop forever
+    # while `docker compose ps` kept reporting "Up Less than a second
+    # (health: starting)", which reads as starting rather than failing.
+    # Giving up after three tries makes the container show as Exited and
+    # `docker compose logs` show why.
+    restart: on-failure:3
     ports:
       - "8080:8080"              # forward proxy (workstations)
       - "127.0.0.1:9090:9090"    # admin: health, CA download, reload, metrics, UI (keep off the LAN)
@@ -21,6 +26,16 @@ services:
       - ../configs:/etc/aigatekeeper             # aigatekeeper.yaml, keywords.txt (rw so the admin UI can apply changes)
       - aigatekeeper-data:/data                  # audit history (SQLite)
     environment:
+      # Paths inside the config resolve against the config file's own
+      # directory, so ../certs and ../data are correct when it is read from
+      # the repository. The image ships a copy rewritten to /certs and
+      # /data, but the bind mount above replaces that copy with the
+      # repository's, putting the relative paths back. These three restore
+      # the container layout, and they win over whatever the file says, so
+      # mounting the config never breaks the CA or the history store.
+      AIGK_CA_CERT: /certs/ca.crt
+      AIGK_CA_KEY: /certs/ca.key
+      AIGK_AUDIT_SQLITE_PATH: /data/audit.db
       AIGK_RELOAD_POLL_INTERVAL: "5s"            # bind mounts on Docker Desktop do not always deliver inotify events
       # AIGK_MODE_MONITOR: "true"                # log only, never block (recommended during rollout)
       # AIGK_ADMIN_PASSWORD_HASH: "$2a$..."      # admin UI login (Phase 7)
