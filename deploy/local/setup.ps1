@@ -73,20 +73,62 @@ Remove-Item (Join-Path $here ".env") -ErrorAction SilentlyContinue
 Write-Host "Wrote the console password into deploy\local\aigatekeeper.yaml"
 
 $abs = (Resolve-Path $caPath).Path
+
+# Which editors are installed decides which instructions are worth printing.
+$hasVSCode = (Test-Path "$env:LOCALAPPDATA\Programs\Microsoft VS Code") -or (Test-Path "$env:APPDATA\Code")
+$jetbrains = @()
+if (Test-Path "$env:APPDATA\JetBrains") {
+    $jetbrains = Get-ChildItem "$env:APPDATA\JetBrains" -Directory |
+        Where-Object { Test-Path (Join-Path $_.FullName "plugins\github-copilot-intellij") } |
+        Select-Object -ExpandProperty Name
+}
+
 Write-Host ""
-Write-Host "Setup is done. Three things left, and the first two need an admin shell:" -ForegroundColor Green
+Write-Host "Setup is done. What is left:" -ForegroundColor Green
 Write-Host ""
-Write-Host "1. Trust the CA for Windows and Chrome:"
+Write-Host "1. Trust the CA (needs an ADMINISTRATOR shell):"
 Write-Host "     certutil -addstore -f Root `"$abs`"" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "2. Trust it for Copilot, which uses Node's own certificate store:"
+Write-Host "2. Trust it for Copilot, whose language server is a bundled Node"
+Write-Host "   runtime with its own certificate list (a normal shell is fine):"
 Write-Host "     setx NODE_EXTRA_CA_CERTS `"$abs`"" -ForegroundColor Cyan
-Write-Host "   (a normal shell is fine for this one; restart VS Code afterwards)"
 Write-Host ""
-Write-Host "3. Start it and point VS Code at it:"
+Write-Host "3. Start the proxy:"
 Write-Host "     docker compose up -d" -ForegroundColor Cyan
-Write-Host "   then add to your VS Code settings.json:"
-Write-Host '     "http.proxy": "http://127.0.0.1:8080"' -ForegroundColor Cyan
-Write-Host '     "http.proxySupport": "override"' -ForegroundColor Cyan
 Write-Host ""
+
+$step = 4
+if ($jetbrains.Count -gt 0) {
+    Write-Host "$step. Point the Copilot plugin at it. Found it in: $($jetbrains -join ', ')" -ForegroundColor Green
+    Write-Host "   The plugin does NOT follow the IDE proxy setting by default: it"
+    Write-Host "   has its own network stack. Set it in its own settings:"
+    Write-Host "     Settings > Tools > GitHub Copilot > Network" -ForegroundColor Cyan
+    Write-Host "       - tick Customize HTTP proxy"
+    Write-Host "       - Host 127.0.0.1   Port 8080" -ForegroundColor Cyan
+    Write-Host "   Also set the IDE's own proxy, which covers the rest of the IDE:"
+    Write-Host "     Settings > Appearance & Behavior > System Settings > HTTP Proxy" -ForegroundColor Cyan
+    Write-Host "       - Manual proxy configuration, HTTP, 127.0.0.1 : 8080"
+    Write-Host "   Quit the IDE completely and start it again: the plugin's language"
+    Write-Host "   server inherits the environment at launch, so a restart is needed."
+    Write-Host ""
+    $step++
+    Write-Host "$step. Check the certificate actually reached the plugin:" -ForegroundColor Green
+    Write-Host "   Double-press Shift, run the action 'Copilot: Log CA Certificates'," -ForegroundColor Cyan
+    Write-Host "   and look for AIGatekeeper in the list it dumps."
+    Write-Host "   If it is missing, or sign-in fails with 'self signed certificate"
+    Write-Host "   in certificate chain', set Networking to Client in the same"
+    Write-Host "   Copilot > Network settings: that uses the IDE's stack and the"
+    Write-Host "   Windows trust store instead of the bundled Node one."
+    Write-Host ""
+    $step++
+}
+if ($hasVSCode -or $jetbrains.Count -eq 0) {
+    Write-Host "$step. Point VS Code at it, in settings.json:"
+    Write-Host '     "http.proxy": "http://127.0.0.1:8080"' -ForegroundColor Cyan
+    Write-Host '     "http.proxySupport": "override"' -ForegroundColor Cyan
+    Write-Host "   Then quit VS Code completely and start it again."
+    Write-Host ""
+}
+
 Write-Host "The console is at http://127.0.0.1:9090"
+Write-Host "Open Traffic, ask Copilot something, and the request appears within a second."

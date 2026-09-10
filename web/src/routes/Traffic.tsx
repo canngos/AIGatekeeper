@@ -23,25 +23,33 @@ interface Filters {
   service: string;
   action: string;
   rule: string;
+  /** Include opaque CONNECT tunnels to hosts outside the policy. Off by
+   *  default so the list stays about inspected prompts, but invaluable when
+   *  checking whether an IDE is using the proxy at all. */
+  tunnelled: boolean;
 }
 
-const EMPTY: Filters = { q: "", service: "", action: "", rule: "" };
+const EMPTY: Filters = { q: "", service: "", action: "", rule: "", tunnelled: false };
 
 export function Traffic() {
   const [live, setLive] = useState(true);
   const [filters, setFilters] = useState<Filters>(EMPTY);
   const [selected, setSelected] = useState<AuditEvent | null>(null);
 
-  const feed = useLiveFeed(live, 200, { service: filters.service, action: filters.action, kind: "request" });
+  const feed = useLiveFeed(live, 200, {
+    service: filters.service,
+    action: filters.action,
+    kind: filters.tunnelled ? "" : "request",
+  });
 
   const history = useInfiniteQuery({
     queryKey: ["events", filters],
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam }) =>
       api.events({
-        // Only inspected requests belong here; start-up and reload events
-        // are lifecycle records and live on the Status page.
-        kind: "request",
+        // Start-up and reload events are lifecycle records and live on the
+        // Status page; tunnels are real traffic and can be opted into.
+        kind: filters.tunnelled ? undefined : "request",
         q: filters.q || undefined,
         service: filters.service || undefined,
         action: filters.action || undefined,
@@ -59,7 +67,8 @@ export function Traffic() {
   );
   const rows = live ? feed.events : historyEvents;
   const historyOff = history.error && String(history.error.message).includes("history");
-  const filtered = live ? rows.filter((e) => matchesText(e, filters.q) && matchesRule(e, filters.rule)) : rows;
+  const visible = filters.tunnelled ? rows.filter(isTraffic) : rows;
+  const filtered = live ? visible.filter((e) => matchesText(e, filters.q) && matchesRule(e, filters.rule)) : visible;
 
   return (
     <Page
@@ -120,7 +129,7 @@ export function Traffic() {
           {filtered.length === 0 ? (
             <Empty title={live ? "Waiting for traffic" : "No matching requests"}>
               {live
-                ? "Requests appear the moment a workstation sends one through the proxy."
+                ? "Requests appear the moment a workstation sends one through the proxy. Seeing nothing at all? Tick Show tunnelled: if connections appear there, the proxy is being used but the host is not in your policy."
                 : "Widen the filters or pick a different time window."}
             </Empty>
           ) : (
@@ -160,6 +169,11 @@ function matchesText(e: AuditEvent, q: string): boolean {
 
 function matchesRule(e: AuditEvent, rule: string): boolean {
   return !rule || e.rule === rule;
+}
+
+/** Requests and tunnels are traffic; start-up and reload records are not. */
+function isTraffic(e: AuditEvent): boolean {
+  return e.kind === "request" || e.kind === "tunnel" || e.kind === "passthrough";
 }
 
 function FilterBar({
@@ -218,6 +232,14 @@ function FilterBar({
           <TextInput id="rule" value={filters.rule} onChange={(rule) => onChange({ ...filters, rule })} placeholder="Any" />
         </div>
       )}
+      <label className="flex items-center gap-1.5 pb-1 text-[12.5px]">
+        <input
+          type="checkbox"
+          checked={filters.tunnelled}
+          onChange={(e) => onChange({ ...filters, tunnelled: e.target.checked })}
+        />
+        Show tunnelled
+      </label>
       {dirty && (
         <Button variant="quiet" onClick={() => onChange(EMPTY)}>
           Reset
@@ -271,6 +293,11 @@ function EventRow({
           <span style={{ color: "var(--ink)" }}>{event.host}</span>
           <span style={{ color: "var(--ink-faint)" }}>{event.path}</span>
         </span>
+        {event.kind !== "request" && (
+          <span className="shrink-0 text-[11px]" style={{ color: "var(--ink-faint)" }}>
+            not inspected
+          </span>
+        )}
 
         {event.service && (
           <span className="hidden w-[86px] shrink-0 truncate text-[12px] sm:block self-center" style={{ color: "var(--ink-muted)" }}>
@@ -294,6 +321,12 @@ function EventRow({
 
       {expanded && (
         <div className="px-4 pb-3 pl-[110px]">
+          {event.kind !== "request" && (
+            <p className="mb-2 text-[12px]" style={{ color: "var(--ink-muted)" }}>
+              This host is not in the policy, so the connection passed through encrypted and was never read. Add it as
+              a service to inspect it.
+            </p>
+          )}
           {hasDetail ? (
             <>
               {event.findings && event.findings.length > 0 && (
@@ -364,10 +397,12 @@ function EventRow({
               )}
             </>
           ) : (
-            <p className="text-[12px]" style={{ color: "var(--ink-muted)" }}>
-              Nothing was found in this prompt. It was forwarded unchanged. To see the text itself, turn on
-              audit.capture_prompts.
-            </p>
+            event.kind === "request" && (
+              <p className="text-[12px]" style={{ color: "var(--ink-muted)" }}>
+                Nothing was found in this prompt. It was forwarded unchanged. To see the text itself, turn on
+                audit.capture_prompts.
+              </p>
+            )
           )}
         </div>
       )}

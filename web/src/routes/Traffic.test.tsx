@@ -116,3 +116,34 @@ describe("Traffic", () => {
     expect(await screen.findByText("api.githubcopilot.com")).toBeInTheDocument();
   });
 });
+
+describe("tunnelled connections", () => {
+  it("hides them by default and shows them when asked, so a first run can be diagnosed", async () => {
+    const events = vi.spyOn(api, "events").mockResolvedValue({ items: [event] });
+    renderTraffic();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "History" }));
+    await waitFor(() => expect(events).toHaveBeenCalledWith(expect.objectContaining({ kind: "request" })));
+
+    await user.click(screen.getByLabelText("Show tunnelled"));
+    await waitFor(() =>
+      expect(events).toHaveBeenCalledWith(expect.objectContaining({ kind: undefined })),
+    );
+  });
+
+  it("labels a tunnelled row as not inspected and explains why", async () => {
+    vi.spyOn(api, "events").mockResolvedValue({
+      items: [{ ...event, kind: "tunnel", path: "", rule: "", action: "allow", findings: [] }],
+    });
+    renderTraffic();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "History" }));
+    await user.click(screen.getByLabelText("Show tunnelled"));
+
+    expect(await screen.findByText("not inspected")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { expanded: false, name: /api.githubcopilot.com/ }));
+    expect(await screen.findByText(/not in the policy, so the connection passed through encrypted/)).toBeInTheDocument();
+  });
+});

@@ -86,6 +86,7 @@ snippets are in `configs/examples/`.
 | macOS | | `sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ca.crt` |
 | Debian/Ubuntu | | copy to `/usr/local/share/ca-certificates/` and run `update-ca-certificates` |
 | VS Code + GitHub Copilot | `"http.proxy": "http://proxy:8080"` (or `HTTPS_PROXY`) | OS trust store plus `NODE_EXTRA_CA_CERTS=ca.crt` |
+| JetBrains IDEs + Copilot | Settings > Tools > GitHub Copilot > Network > Customize HTTP proxy (the plugin has its own stack and does not follow the IDE proxy), and the IDE proxy for everything else | OS trust store plus `NODE_EXTRA_CA_CERTS=ca.crt`; verify with the "Copilot: Log CA Certificates" action |
 | Cursor | `HTTPS_PROXY` | `SSL_CERT_FILE=ca.crt` (Cursor's own transport is protobuf; it is tunnelled, not inspected) |
 | Python / Node SDKs | `HTTPS_PROXY` | `REQUESTS_CA_BUNDLE` / `NODE_EXTRA_CA_CERTS` |
 | Ollama clients | none (localhost bypasses proxies) | run Ollama on 11435 and a `listen.reverse` entry on 11434 |
@@ -204,6 +205,24 @@ Emailing the person who triggered an alert (`to_user`) is off unless you switch 
 to an employee about their own activity is employee monitoring, and in many places it needs
 works-council or privacy sign-off before you enable it. Running in `mode.monitor` while you tune the
 rules is the safer way to start.
+
+### JetBrains IDEs
+
+The Copilot plugin runs its completions and chat through a bundled Node runtime
+(`copilot-agent/native/<platform>/copilot-language-server`), not through the IDE's Java HTTP stack,
+so the IDE's own proxy setting does not reach it. Configure it in two places:
+
+- **Settings > Tools > GitHub Copilot > Network**: tick *Customize HTTP proxy* and point it at the
+  gatekeeper. The *Networking* mode there decides which stack it uses: `Native` is the bundled Node
+  one, which reads `NODE_EXTRA_CA_CERTS`; `Client` is the IDE's, which uses the IDE trust store and
+  the Windows root store. If certificate errors persist in `Native`, switching to `Client` is the
+  documented fallback.
+- **Settings > Appearance & Behavior > System Settings > HTTP Proxy**: covers the IDE itself.
+
+Set `NODE_EXTRA_CA_CERTS` as a **user** environment variable, then quit the IDE completely and start
+it again: the language server inherits its environment at launch, so reopening a project is not
+enough. To confirm the certificate arrived, double-press Shift and run the action
+**Copilot: Log CA Certificates**, which dumps the authorities the agent actually loaded.
 
 ## Reading your own Copilot chat
 
