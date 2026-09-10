@@ -40,7 +40,7 @@ func cmdHashPassword(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "\nerror: could not read password from stdin")
 		return 1
 	}
-	password := strings.TrimRight(line, "\r\n")
+	password := readPassword(line)
 	if len(password) < 8 {
 		fmt.Fprintln(stderr, "\nerror: password must be at least 8 characters")
 		return 1
@@ -54,4 +54,12 @@ func cmdHashPassword(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintln(stdout, hash)
 	fmt.Fprintf(stderr, "\nPut this in the config as admin.auth.password_hash (quote it) or set AIGK_ADMIN_PASSWORD_HASH.\n")
 	return 0
+}
+
+// readPassword trims the line terminator and a leading UTF-8 byte-order
+// mark. Windows PowerShell prepends one to anything piped into a native
+// command, and hashing it would produce a password nobody can type.
+// Trailing spaces are left alone: they may be part of the password.
+func readPassword(line string) string {
+	return strings.TrimPrefix(strings.TrimRight(line, "\r\n"), "\ufeff")
 }

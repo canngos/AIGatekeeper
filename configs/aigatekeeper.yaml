@@ -41,6 +41,11 @@ audit:
   file: ""
   include_preview: true          # masked preview of matched values, e.g. AKIA****Q7
   log_allowed: true
+  # Records the prompt text itself, not just what was found in it. Useful
+  # for a pilot on one machine; a liability across a company, because the
+  # audit database then holds everything your developers type.
+  capture_prompts: false
+  max_prompt_bytes: 8KiB
   sqlite:                        # searchable history behind the admin UI (stdout logging is unaffected)
     enabled: false
     path: ../data/audit.db

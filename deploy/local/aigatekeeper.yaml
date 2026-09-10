@@ -1,0 +1,76 @@
+# AIGatekeeper on one workstation, set up to watch GitHub Copilot.
+#
+# Nothing is blocked: mode.monitor is on, so a prompt that matches a rule is
+# recorded and forwarded anyway. Turn it off once the matches look right.
+version: 1
+
+listen:
+  forward: "0.0.0.0:8080"
+  admin: "0.0.0.0:9090"        # published to 127.0.0.1 only by docker-compose
+
+ca:
+  cert: /certs/ca.crt
+  key: /certs/ca.key
+
+mode:
+  monitor: true                # watch first, block later
+
+audit:
+  stdout: true
+  log_allowed: true            # record clean prompts too, not only matches
+  capture_prompts: true        # record what was typed, so you can read your own chat
+  max_prompt_bytes: 32KiB
+  sqlite:
+    enabled: true              # backs the console's history and charts
+    path: /data/audit.db
+    max_age: 168h              # a week
+    batch_interval: 100ms
+
+admin:
+  ui: true
+  auth:
+    # Written by setup.ps1. Change it with: aigatekeeper admin hash-password
+    password_hash: "$2a$10$khtyj8Lak2L3eMhmB.Vs5uFrZTGuCwHbXRNqvMsFhk.VWA.e5M8Vu"
+
+tunnel_unmatched: true         # anything not listed below is never decrypted
+
+services:
+  - name: copilot
+    hosts:
+      - '^api\.githubcopilot\.com$'
+      - '^.*\.githubcopilot\.com$'
+      - '^copilot-proxy\.githubusercontent\.com$'
+    extractor: copilot
+    block_mode: synthetic      # a stand-in reply, so the IDE explains rather than errors
+    passthrough_paths: ['^/_ping$', '^/models$', '^/telemetry', '^/agents$']
+    rules: [secrets, pii]
+
+  - name: openai
+    hosts: ['^api\.openai\.com$']
+    extractor: openai
+    block_mode: reject
+    rules: [secrets, pii]
+
+  - name: anthropic
+    hosts: ['^api\.anthropic\.com$']
+    extractor: anthropic
+    block_mode: reject
+    rules: [secrets, pii]
+
+rules:
+  - id: secrets
+    severity: critical
+    action: block              # held by monitor mode until you turn it off
+    detectors: [aws_access_key, aws_secret_key, github_token, slack_token,
+                google_api_key, openai_key, anthropic_key, jwt, private_key,
+                high_entropy_secret]
+
+  - id: pii
+    severity: high
+    action: block
+    detectors: [credit_card, us_ssn, iban]
+
+allowlist:
+  values:
+    - AKIAIOSFODNN7EXAMPLE
+    - "4111111111111111"

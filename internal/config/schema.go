@@ -106,9 +106,13 @@ type ReloadConfig struct {
 
 // AuditConfig configures audit sinks.
 type AuditConfig struct {
-	Stdout         bool              `yaml:"stdout"`
-	File           string            `yaml:"file,omitempty"`
-	IncludePreview bool              `yaml:"include_preview"`
+	Stdout         bool   `yaml:"stdout"`
+	File           string `yaml:"file,omitempty"`
+	IncludePreview bool   `yaml:"include_preview"`
+	// CapturePrompts records the prompt text itself, not just what was
+	// found in it. Off by default and warned about at startup.
+	CapturePrompts bool              `yaml:"capture_prompts,omitempty"`
+	MaxPromptBytes ByteSize          `yaml:"max_prompt_bytes,omitempty"`
 	LogAllowed     bool              `yaml:"log_allowed"`
 	SQLite         AuditSQLiteConfig `yaml:"sqlite,omitempty"`
 }
@@ -344,6 +348,7 @@ func Default() *Config {
 			Stdout:         true,
 			IncludePreview: true,
 			LogAllowed:     true,
+			MaxPromptBytes: 8 << 10,
 			SQLite: AuditSQLiteConfig{
 				Path:          "./data/audit.db",
 				MaxAge:        Duration(720 * time.Hour),
@@ -445,6 +450,9 @@ func (c *Config) Validate() error {
 	}
 	if !isOneOf(c.DefaultAction, ActionBlock, ActionMonitor, ActionAllow) {
 		ve.add("default_action", "must be block, monitor or allow")
+	}
+	if c.Audit.CapturePrompts && c.Audit.MaxPromptBytes < 0 {
+		ve.add("audit.max_prompt_bytes", "must not be negative")
 	}
 	if c.Audit.SQLite.Enabled && c.Audit.SQLite.Path == "" {
 		ve.add("audit.sqlite.path", "is required when the history store is enabled")

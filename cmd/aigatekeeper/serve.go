@@ -129,10 +129,17 @@ func serve(ctx context.Context, cfgPath string, stdout io.Writer, logger *slog.L
 	if cfg.TLS.UpstreamInsecure {
 		logger.Warn("tls.upstream_insecure is enabled: upstream certificates are NOT verified")
 	}
+	if cfg.Audit.CapturePrompts {
+		logger.Warn("audit.capture_prompts is on: the text developers send is being recorded, not just what was found in it")
+	}
 
 	forwarder := proxy.NewForwarder(transport, logger)
 	inspect := proxy.Chain(forwarder,
-		proxy.Audited(auditLog, cfg.Audit.LogAllowed),
+		proxy.AuditedWith(auditLog, proxy.AuditOptions{
+			LogAllowed:     cfg.Audit.LogAllowed,
+			CapturePrompts: cfg.Audit.CapturePrompts,
+			MaxPromptBytes: int(cfg.Audit.MaxPromptBytes),
+		}),
 		proxy.Route(store),
 		proxy.ReadBody(proxy.BodyLimits{
 			MaxBodyBytes:    cfg.Limits.MaxBodyBytes.Int64(),

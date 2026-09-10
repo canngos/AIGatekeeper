@@ -1,0 +1,32 @@
+# AIGatekeeper on one workstation.
+#
+#   cd deploy/local
+#   ..\..\deploy\local\setup.ps1          # generates the CA and an admin password
+#   docker compose up -d
+#
+# The forward proxy is published on loopback only, so nothing else on your
+# network can use this machine as an open proxy.
+
+services:
+  aigatekeeper:
+    build:
+      context: ../..
+      dockerfile: deploy/Dockerfile
+    image: aigatekeeper:local
+    container_name: aigatekeeper
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080" # proxy: point VS Code here
+      - "127.0.0.1:9090:9090" # console: http://127.0.0.1:9090
+    volumes:
+      - ./certs:/certs                       # ca.crt / ca.key, created by setup.ps1
+      - ./aigatekeeper.yaml:/etc/aigatekeeper/aigatekeeper.yaml
+      - aigatekeeper-data:/data              # audit history
+    environment:
+      # The admin password hash lives in aigatekeeper.yaml, not here: a
+      # bcrypt hash is full of $ signs and compose expands them, in both
+      # `environment` and `env_file`, which silently corrupts it.
+      AIGK_RELOAD_POLL_INTERVAL: "5s"        # Docker Desktop bind mounts miss inotify
+
+volumes:
+  aigatekeeper-data:

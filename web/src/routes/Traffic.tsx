@@ -242,7 +242,8 @@ function EventRow({
   expanded: boolean;
   onToggle: () => void;
 }) {
-  const hasDetail = (event.findings?.length ?? 0) > 0 || event.error || event.reason;
+  const hasDetail =
+    (event.findings?.length ?? 0) > 0 || (event.prompt?.length ?? 0) > 0 || event.error || event.reason;
   return (
     <li className={`border-b last:border-b-0 ${fresh ? "arriving" : ""}`} style={{ borderColor: "var(--rule)" }}>
       <button
@@ -322,6 +323,30 @@ function EventRow({
                   </tbody>
                 </table>
               )}
+              {event.prompt && event.prompt.length > 0 && (
+                <div className="mt-2">
+                  <p className="mb-1 text-[12px]" style={{ color: "var(--ink-faint)" }}>
+                    What was sent
+                  </p>
+                  <ul className="border" style={{ borderColor: "var(--rule)" }}>
+                    {event.prompt.map((seg, i) => (
+                      <li key={i} className="border-b px-2 py-1.5 last:border-b-0" style={{ borderColor: "var(--rule)" }}>
+                        <div className="flex items-baseline gap-2">
+                          <span className="wire" style={{ color: "var(--ink-faint)" }}>
+                            {seg.path}
+                          </span>
+                          {seg.role && (
+                            <span className="text-[11px]" style={{ color: "var(--ink-muted)" }}>
+                              {seg.role}
+                            </span>
+                          )}
+                        </div>
+                        <p className="mt-0.5 max-h-40 overflow-y-auto whitespace-pre-wrap text-[12.5px]">{seg.text}</p>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               <dl className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-[12px]" style={{ color: "var(--ink-muted)" }}>
                 <Meta label="Request" value={event.request_id} mono />
                 <Meta label="Workstation" value={event.client_ip} mono />
@@ -340,7 +365,8 @@ function EventRow({
             </>
           ) : (
             <p className="text-[12px]" style={{ color: "var(--ink-muted)" }}>
-              Nothing was found in this prompt. It was forwarded unchanged.
+              Nothing was found in this prompt. It was forwarded unchanged. To see the text itself, turn on
+              audit.capture_prompts.
             </p>
           )}
         </div>

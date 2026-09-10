@@ -95,6 +95,16 @@ CREATE TABLE IF NOT EXISTS findings (
 );
 CREATE INDEX IF NOT EXISTS findings_event ON findings(event_id);
 CREATE INDEX IF NOT EXISTS findings_detector ON findings(detector);
+-- Prompt text, written only when audit.capture_prompts is on. Kept in its
+-- own table so the retention sweep drops it with its event.
+CREATE TABLE IF NOT EXISTS prompts (
+  id INTEGER PRIMARY KEY,
+  event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  path TEXT NOT NULL DEFAULT '',
+  role TEXT NOT NULL DEFAULT '',
+  text TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS prompts_event ON prompts(event_id);
 `
 
 // OpenSQLite opens (creating if needed) the history database at path.
@@ -233,6 +243,12 @@ func (s *SQLiteStore) insert(batch []Event) error {
 		return s.recordErr(err)
 	}
 	defer fStmt.Close()
+	pStmt, err := tx.Prepare(`INSERT INTO prompts (event_id, path, role, text) VALUES (?,?,?,?)`)
+	if err != nil {
+		tx.Rollback()
+		return s.recordErr(err)
+	}
+	defer pStmt.Close()
 
 	for _, e := range batch {
 		res, err := evStmt.Exec(e.Time.UnixMilli(), e.Kind, e.RequestID, e.ClientIP, e.User, e.Device, e.UserSource, e.Listener, e.Method, e.Host, e.Path,
@@ -244,6 +260,12 @@ func (s *SQLiteStore) insert(batch []Event) error {
 		id, _ := res.LastInsertId()
 		for _, f := range e.Findings {
 			if _, err := fStmt.Exec(id, f.Detector, f.Severity, f.Confidence, f.Segment, f.Role, f.Preview); err != nil {
+				tx.Rollback()
+				return s.recordErr(err)
+			}
+		}
+		for _, seg := range e.Prompt {
+			if _, err := pStmt.Exec(id, seg.Path, seg.Role, seg.Text); err != nil {
 				tx.Rollback()
 				return s.recordErr(err)
 			}
@@ -457,7 +479,26 @@ func (s *SQLiteStore) attachFindings(ctx context.Context, items []StoredEvent) e
 			items[i].Findings = append(items[i].Findings, f)
 		}
 	}
-	return rows.Err()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	prows, err := s.reader.QueryContext(ctx, "SELECT event_id, path, role, text FROM prompts WHERE event_id IN ("+placeholders+") ORDER BY id", ids...)
+	if err != nil {
+		return err
+	}
+	defer prows.Close()
+	for prows.Next() {
+		var eid int64
+		var seg PromptSegment
+		if err := prows.Scan(&eid, &seg.Path, &seg.Role, &seg.Text); err != nil {
+			return err
+		}
+		if i, ok := index[eid]; ok {
+			items[i].Prompt = append(items[i].Prompt, seg)
+		}
+	}
+	return prows.Err()
 }
 
 // Get returns one event with its findings.

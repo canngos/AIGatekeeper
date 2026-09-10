@@ -102,11 +102,32 @@ func Chain(final http.Handler, mws ...Middleware) http.Handler {
 	return h
 }
 
+// AuditOptions tune what the audit middleware records.
+type AuditOptions struct {
+	// LogAllowed records requests that were forwarded, not only the ones
+	// that were acted on.
+	LogAllowed bool
+	// CapturePrompts records the prompt text itself. Off by default: a
+	// proxy that keeps what everyone types is a bigger liability than the
+	// leaks it prevents.
+	CapturePrompts bool
+	// MaxPromptBytes truncates captured text; 0 means 8 KiB.
+	MaxPromptBytes int
+}
+
 // Audited is the outermost middleware: it creates the Transaction, records
 // the response status and size, and emits one audit event per request.
 func Audited(logger audit.Logger, logAllowed bool) Middleware {
+	return AuditedWith(logger, AuditOptions{LogAllowed: logAllowed})
+}
+
+// AuditedWith is Audited with explicit options.
+func AuditedWith(logger audit.Logger, opts AuditOptions) Middleware {
 	if logger == nil {
 		logger = audit.Discard
+	}
+	if opts.MaxPromptBytes <= 0 {
+		opts.MaxPromptBytes = 8 << 10
 	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -138,10 +159,14 @@ func Audited(logger audit.Logger, logAllowed bool) Middleware {
 			if tx.Action == "" {
 				tx.Action = audit.ActionAllow
 			}
-			if tx.Action == audit.ActionAllow && !logAllowed {
+			if tx.Action == audit.ActionAllow && !opts.LogAllowed {
 				return
 			}
-			logger.Log(tx.Event())
+			e := tx.Event()
+			if opts.CapturePrompts {
+				e.Prompt = tx.PromptSegments(opts.MaxPromptBytes)
+			}
+			logger.Log(e)
 		})
 	}
 }
@@ -180,6 +205,28 @@ func (tx *Transaction) Event() audit.Event {
 		e.Error = tx.Err.Error()
 	}
 	return e
+}
+
+// PromptSegments projects the extraction into audit-safe segments,
+// truncated so one enormous paste cannot fill the log.
+func (tx *Transaction) PromptSegments(maxBytes int) []audit.PromptSegment {
+	if tx.Extraction == nil || len(tx.Extraction.Segments) == 0 {
+		return nil
+	}
+	out := make([]audit.PromptSegment, 0, len(tx.Extraction.Segments))
+	budget := maxBytes
+	for _, seg := range tx.Extraction.Segments {
+		if budget <= 0 {
+			break
+		}
+		text := seg.Text
+		if len(text) > budget {
+			text = text[:budget] + "…"
+		}
+		budget -= len(text)
+		out = append(out, audit.PromptSegment{Path: seg.Path, Role: seg.Role, Text: text})
+	}
+	return out
 }
 
 func clientIP(addr string) string {

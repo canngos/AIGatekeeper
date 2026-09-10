@@ -46,6 +46,12 @@ type Event struct {
 	Rule      string           `json:"rule,omitempty"`
 	Findings  []FindingSummary `json:"findings,omitempty"`
 
+	// Prompt carries the extracted prompt text. It is populated only when
+	// audit.capture_prompts is switched on, which is off by default: a DLP
+	// proxy that records what everyone types is a bigger liability than the
+	// leaks it prevents. Useful for a single-machine pilot.
+	Prompt []PromptSegment `json:"prompt,omitempty"`
+
 	BytesIn        int64  `json:"bytes_in,omitempty"`
 	BytesOut       int64  `json:"bytes_out,omitempty"`
 	Encoding       string `json:"encoding,omitempty"`
@@ -53,6 +59,13 @@ type Event struct {
 	LatencyMS      int64  `json:"latency_ms"`
 	Error          string `json:"error,omitempty"`
 	Message        string `json:"message,omitempty"`
+}
+
+// PromptSegment is one piece of extracted prompt text with its location.
+type PromptSegment struct {
+	Path string `json:"path"`
+	Role string `json:"role,omitempty"`
+	Text string `json:"text"`
 }
 
 // FindingSummary is the audit-safe projection of a DLP finding.

@@ -49,6 +49,21 @@ curl -x http://127.0.0.1:8080 --cacert certs/ca.crt https://api.openai.com/v1/ch
 `scripts/smoke.sh bin/aigatekeeper` runs a self-contained end-to-end check against a local TLS
 upstream (Linux/macOS); `scripts/smoke.ps1` exercises an already running proxy on Windows.
 
+## Watching your own machine
+
+`deploy/local` sets the proxy up for a single workstation, aimed at GitHub Copilot: nothing is
+blocked, the prompt text is recorded so you can read your own chat, and the console keeps a week of
+history.
+
+```powershell
+cd deploy\local
+.\setup.ps1                     # builds the image, makes the CA, sets a console password
+docker compose up -d
+```
+
+`setup.ps1` prints the two commands that need an elevated shell (trusting the CA) and the VS Code
+settings to add. See "Reading your own Copilot chat" below.
+
 ## Quick start (Docker)
 
 ```sh
@@ -186,6 +201,26 @@ Emailing the person who triggered an alert (`to_user`) is off unless you switch 
 to an employee about their own activity is employee monitoring, and in many places it needs
 works-council or privacy sign-off before you enable it. Running in `mode.monitor` while you tune the
 rules is the safer way to start.
+
+## Reading your own Copilot chat
+
+By default the audit trail records what was *found* in a prompt, never the prompt itself. For a
+pilot on your own machine that is usually too little: you want to see what Copilot actually sends.
+Turn it on with:
+
+```yaml
+audit:
+  capture_prompts: true
+  max_prompt_bytes: 32KiB     # longer prompts are truncated
+```
+
+Every inspected request then carries its extracted text, shown under "What was sent" when you expand
+a row in Traffic. It is stored in the history database alongside the event and deleted by the same
+retention sweep.
+
+Leave this off in a real deployment. A proxy that keeps a copy of everything your developers type is
+a bigger liability than the leaks it prevents, and it turns the audit database into the most
+sensitive store you own.
 
 ## Admin listener
 

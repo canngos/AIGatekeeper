@@ -31,6 +31,8 @@ export interface AuditEvent {
   reason?: string;
   rule?: string;
   findings?: Finding[];
+  /** Present only when audit.capture_prompts is on. */
+  prompt?: { path: string; role?: string; text: string }[];
   bytes_in?: number;
   bytes_out?: number;
   encoding?: string;
