@@ -1,0 +1,6 @@
+# Internal project names and terms that must not be pasted into external AI tools.
+# One per line; lines starting with # are ignored. Matching is configured in the
+# `internal` rule (case_insensitive, word_boundary).
+Project Falcon
+Project Orion
+codename-nightjar
